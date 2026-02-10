@@ -167,59 +167,73 @@ elif nav == "Step 3: Ternary":
         st.session_state.nav_index = 3
         st.rerun()
 
-# --- STEP 4: PREDICTION (FIXED: SMILES OVERRIDES DROPDOWN) ---
+# --- STEP 4: PREDICTION (SMILES ANALYSIS MODE) ---
 elif nav == "Step 4: AI Prediction":
     st.header("4. Prediction & Chemical Analysis")
     if 'f_o' not in st.session_state: 
         st.error("Please complete previous steps.")
     else:
         try:
-            # 1. Get SMILES input
-            smiles = st.session_state.get('smiles', "").strip()
+            # 1. SMILES PRIORITY LOGIC
+            user_smiles = st.session_state.get('smiles', "").strip()
             
-            # 2. Logic: Priority to SMILES
-            if smiles:
-                st.info(f"🧪 **Mode:** Predicting for Manual SMILES: `{smiles}`")
-                mol, info = get_mol_data(smiles)
-                if mol:
-                    st.image(Draw.MolToImage(mol, size=(250, 250)), caption="Structure of Input SMILES")
-                    st.success(f"**Chemical Properties:** MW: {info['MW']:.1f} Da | LogP: {info['LogP']:.1f}")
+            if user_smiles:
+                st.subheader("🧬 Analysis for Custom SMILES")
+                mol, info = get_mol_data(user_smiles)
                 
-                # IMPORTANT: We use 0 (the first index) to represent 'New/Unknown Molecule' 
-                # so the model doesn't use the ID of the dropdown drug.
-                drug_input_val = 0 
+                if mol:
+                    # Render the molecule
+                    img = Draw.MolToImage(mol, size=(300, 300))
+                    st.image(img, caption=f"Chemical Structure of: {user_smiles}")
+                    
+                    # Display the physical analysis
+                    col_a, col_b, col_c = st.columns(3)
+                    col_a.metric("Molecular Weight", f"{info['MW']:.2f} Da")
+                    col_b.metric("Lipophilicity (LogP)", f"{info['LogP']:.2f}")
+                    col_c.success("Ready for Nano-Prediction")
+                    
+                    # Force the model to treat this as a "New Molecule" 
+                    # We use a neutral index (0) so it doesn't lean on database drug IDs
+                    drug_input_val = 0 
+                else:
+                    st.error("Invalid SMILES. Falling back to dropdown drug.")
+                    drug_input_val = encoders['Drug_Name'].transform([st.session_state.drug])[0]
             else:
-                st.info(f"💊 **Mode:** Predicting for Database Drug: `{st.session_state.drug}`")
+                st.info(f"💊 Predicting for Database Drug: {st.session_state.drug}")
                 drug_input_val = encoders['Drug_Name'].transform([st.session_state.drug])[0]
 
-            # 3. Create Input DataFrame
+            # 2. PREPARE INPUT FOR THE AI
             in_df = pd.DataFrame([{
-                'Drug_Name': drug_input_val, 
+                'Drug_Name': drug_input_val,
                 'Oil_phase': encoders['Oil_phase'].transform([st.session_state.f_o])[0],
                 'Surfactant': encoders['Surfactant'].transform([st.session_state.f_s])[0],
                 'Co-surfactant': encoders['Co-surfactant'].transform([str(st.session_state.f_cs)])[0]
             }])
 
-            # 4. Predict results
+            # 3. RUN PREDICTIONS
             res = {t: models[t].predict(in_df)[0] for t in models}
-            meth = encoders['Method'].inverse_transform([method_ai.predict(in_df)[0]])[0]
+            meth_idx = method_ai.predict(in_df)[0]
+            meth_name = encoders['Method'].inverse_transform([meth_idx])[0]
 
-            # 5. Display Results
+            # 4. SHOW RESULTS
+            st.divider()
             c1, c2, c3 = st.columns(3)
             c1.metric("Predicted Size", f"{res['Size_nm']:.2f} nm")
-            c2.metric("PDI", f"{res['PDI']:.3f}")
-            c3.metric("EE %", f"{res['Encapsulation_Efficiency']:.1f}%")
+            c2.metric("PDI (Uniformity)", f"{res['PDI']:.3f}")
+            c3.metric("Encapsulation Efficiency", f"{res['Encapsulation_Efficiency']:.1f}%")
             
-            st.success(f"🛠️ **Recommended Construction Method:** {meth}")
+            st.warning(f"🛠️ **Suggested Method:** {meth_name}")
 
-            # 6. SHAP Visualization
-            st.divider()
-            st.subheader("AI Decision Logic (Impact Analysis)")
+            # 5. SHAP INTERPRETABILITY (Crucial for Analysis)
+            st.subheader("🔍 AI Decision Analysis")
+            st.write("This chart shows how your SMILES drug and selected oils are impacting the particle size.")
+            
             explainer = shap.Explainer(models['Size_nm'], X_train)
             sv = explainer(in_df)
-            fig, ax = plt.subplots(figsize=(8,3))
-            shap.plots.bar(sv[0], show=False)
+            fig, ax = plt.subplots(figsize=(10, 4))
+            # If it's a new SMILES, SHAP will show the impact of the "Unknown" drug category
+            shap.plots.waterfall(sv[0], show=False)
             st.pyplot(fig)
 
         except Exception as e: 
-            st.error(f"Prediction Error: {e}. Ensure all components were selected in Step 2.")
+            st.error(f"Analysis Error: {e}")
