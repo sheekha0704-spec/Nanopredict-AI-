@@ -190,17 +190,17 @@ elif nav == "Step 4: AI Prediction":
             c_b.metric("PDI", f"{res['PDI']:.3f}"); c_b.metric("Stability Score", f"{min(100, (abs(res['Zeta_mV'])/30)*100):.1f}/100")
             c_c.metric("Zeta", f"{res['Zeta_mV']:.2f} mV"); c_c.subheader("🛠️ Appropriate Method"); c_c.success(meth_name)
             st.divider()
-                st.subheader("AI Decision Logic: SHAP Analysis Description")
-                st.markdown("""
-                **What is SHAP (SHapley Additive exPlanations)?**
-                SHAP breaks down the prediction to show how much each component (Drug, Oil, Surfactant) contributed to the final result.
-                * **Red Bars:** Increase predicted size.
-                * **Blue Bars:** Decrease predicted size (Nano-effect).
-                """)
+            st.subheader("AI Decision Logic: SHAP Analysis Description")
+            st.markdown("""
+            **What is SHAP (SHapley Additive exPlanations)?**
+            SHAP breaks down the prediction to show how much each component (Drug, Oil, Surfactant) contributed to the final result.
+            * **Red Bars:** Increase predicted size.
+             * **Blue Bars:** Decrease predicted size (Nano-effect).
+            """)
                 
-                explainer = shap.Explainer(models['Size_nm'], X_train)
-                sv = explainer(in_df)
-                fig_sh, _ = plt.subplots(figsize=(10, 4))
-                shap.plots.waterfall(sv[0], show=False)
-                st.pyplot(fig_sh)
+            explainer = shap.Explainer(models['Size_nm'], X_train)
+            sv = explainer(in_df)
+            fig_sh, _ = plt.subplots(figsize=(10, 4))
+            shap.plots.waterfall(sv[0], show=False)
+            st.pyplot(fig_sh)
         except Exception as e: st.error(f"Error: {str(e)}")
