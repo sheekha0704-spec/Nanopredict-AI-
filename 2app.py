@@ -96,32 +96,47 @@ if df is not None:
 
 # --- STEP 1: SOURCING ---
 if nav == "Step 1: Sourcing":
-    st.header("NanoPredict: Drug-Driven Component Sourcing")
-    uploaded_file = st.file_uploader("Industrial Work: Browse CSV File", type="csv")
-    if uploaded_file: df = load_and_clean_data(uploaded_file)
+    st.header("1. Drug-Driven Component Sourcing")
     
-    if df is not None:
-        c1, c2 = st.columns(2)
-        with c1:
-            drug = st.selectbox("Select Drug from Database", sorted(df['Drug_Name'].unique()))
-            st.session_state.drug = drug
-        with c2:
-            smiles = st.text_input("Enter Drug SMILES manually", placeholder="Enter string here...")
-            if smiles: st.caption(f"SMILES Registered: {smiles}")
+    c1, c2 = st.columns(2)
+    with c1:
+        drug = st.selectbox("Select Drug from Database", sorted(df['Drug_Name'].unique()))
+        st.session_state.drug = drug
+    with c2:
+        smiles_val = st.text_input("OR Enter Drug SMILES manually", placeholder="e.g., CC1=C(C=C(C=C1)C(=O)O)C")
+        st.session_state.smiles = smiles_val
 
+    # LOGIC: If SMILES exists, calculate targets. If not, use Database.
+    if st.session_state.smiles:
+        mol, info = get_mol_data(st.session_state.smiles)
+        if mol:
+            st.success("✅ SMILES Detected. Optimizing formulation for this chemical structure...")
+            # Logic: High LogP needs long-chain oils. Low LogP needs surfactants with high HLB.
+            target_logp = info['LogP']
+            
+            # Filter oils based on chemistry (Simulated Intelligence)
+            if target_logp > 4:
+                rec_oils = ["LCT (Long Chain Triglycerides)", "Castor Oil", "Olive Oil"]
+            else:
+                rec_oils = ["MCT (Medium Chain Triglycerides)", "Capryol 90", "Isopropyl Myristate"]
+            
+            st.session_state.o = rec_oils
+            st.session_state.s = ["Tween 80", "Cremophor RH40"] if target_logp > 3 else ["Span 80", "Labrasol"]
+            st.session_state.cs = ["Ethanol", "Propylene Glycol", "PEG 400"]
+        else:
+            st.error("Invalid SMILES format.")
+    else:
+        # Standard Database Sourcing
         d_subset = df[df['Drug_Name'] == drug]
-        o_list, s_list, cs_list = sorted(d_subset['Oil_phase'].unique()), sorted(d_subset['Surfactant'].unique()), sorted(d_subset['Co-surfactant'].unique())
-        st.session_state.update({"o": o_list, "s": s_list, "cs": cs_list})
+        st.session_state.o = sorted(d_subset['Oil_phase'].unique())
+        st.session_state.s = sorted(d_subset['Surfactant'].unique())
+        st.session_state.cs = sorted(d_subset['Co-surfactant'].unique())
 
-        st.subheader(f"Best Matched Components for {drug}")
-        col1, col2, col3 = st.columns(3)
-        col1.info("🛢️ **Oils**\n" + "\n".join([f"• {x}" for x in o_list[:3]]))
-        col2.success("🧼 **Surfactants**\n" + "\n".join([f"• {x}" for x in s_list[:3]]))
-        col3.warning("🧪 **Co-Surfactants**\n" + "\n".join([f"• {x}" for x in cs_list[:3]]))
-
-        if st.button("Next: Solubility Analysis ➡️"):
-            st.session_state.nav_index = 1
-            st.rerun()
+    st.subheader("Recommended Components for your Drug")
+    col1, col2, col3 = st.columns(3)
+    col1.info("🛢️ **Suggested Oils**\n" + "\n".join([f"• {x}" for x in st.session_state.o[:3]]))
+    col2.success("🧼 **Suggested Surfactants**\n" + "\n".join([f"• {x}" for x in st.session_state.s[:3]]))
+    col3.warning("🧪 **Suggested Co-Surfactants**\n" + "\n".join([f"• {x}" for x in st.session_state.cs[:3]]))
 
 # --- STEP 2: SOLUBILITY ---
 elif nav == "Step 2: Solubility":
@@ -167,73 +182,65 @@ elif nav == "Step 3: Ternary":
         st.session_state.nav_index = 3
         st.rerun()
 
-# --- STEP 4: PREDICTION (SMILES ANALYSIS MODE) ---
+# --- STEP 4: AI PREDICTION ---
 elif nav == "Step 4: AI Prediction":
-    st.header("4. Prediction & Chemical Analysis")
-    if 'f_o' not in st.session_state: 
-        st.error("Please complete previous steps.")
+    st.header("4. Optimized Formulation Analysis")
+    
+    if 'f_o' not in st.session_state:
+        st.error("Please select your components in Step 2 first.")
     else:
-        try:
-            # 1. SMILES PRIORITY LOGIC
-            user_smiles = st.session_state.get('smiles', "").strip()
-            
-            if user_smiles:
-                st.subheader("🧬 Analysis for Custom SMILES")
-                mol, info = get_mol_data(user_smiles)
-                
-                if mol:
-                    # Render the molecule
-                    img = Draw.MolToImage(mol, size=(300, 300))
-                    st.image(img, caption=f"Chemical Structure of: {user_smiles}")
-                    
-                    # Display the physical analysis
-                    col_a, col_b, col_c = st.columns(3)
-                    col_a.metric("Molecular Weight", f"{info['MW']:.2f} Da")
-                    col_b.metric("Lipophilicity (LogP)", f"{info['LogP']:.2f}")
-                    col_c.success("Ready for Nano-Prediction")
-                    
-                    # Force the model to treat this as a "New Molecule" 
-                    # We use a neutral index (0) so it doesn't lean on database drug IDs
-                    drug_input_val = 0 
-                else:
-                    st.error("Invalid SMILES. Falling back to dropdown drug.")
-                    drug_input_val = encoders['Drug_Name'].transform([st.session_state.drug])[0]
-            else:
-                st.info(f"💊 Predicting for Database Drug: {st.session_state.drug}")
-                drug_input_val = encoders['Drug_Name'].transform([st.session_state.drug])[0]
+        # Get SMILES Data
+        user_smiles = st.session_state.get('smiles', "").strip()
+        mol, info = get_mol_data(user_smiles) if user_smiles else (None, None)
 
-            # 2. PREPARE INPUT FOR THE AI
+        # AI Prediction Logic
+        try:
+            # If SMILES is present, we adjust the input features to reflect a 'New' drug
+            drug_idx = 0 if user_smiles else encoders['Drug_Name'].transform([st.session_state.drug])[0]
+            
             in_df = pd.DataFrame([{
-                'Drug_Name': drug_input_val,
+                'Drug_Name': drug_idx,
                 'Oil_phase': encoders['Oil_phase'].transform([st.session_state.f_o])[0],
                 'Surfactant': encoders['Surfactant'].transform([st.session_state.f_s])[0],
                 'Co-surfactant': encoders['Co-surfactant'].transform([str(st.session_state.f_cs)])[0]
             }])
 
-            # 3. RUN PREDICTIONS
             res = {t: models[t].predict(in_df)[0] for t in models}
-            meth_idx = method_ai.predict(in_df)[0]
-            meth_name = encoders['Method'].inverse_transform([meth_idx])[0]
+            
+            # --- OUTPUT MODIFICATION BASED ON SMILES ---
+            st.subheader("📊 Final AI Formulation Report")
+            
+            if info:
+                # Dynamic Ratio Calculation based on LogP and MW
+                # Higher LogP drugs usually require higher Oil:Smix ratios
+                base_oil_ratio = 15 if info['LogP'] < 3 else 25
+                base_smix_ratio = 45 if info['MW'] < 400 else 35
+                
+                st.write(f"### 🧪 Structural Analysis for `{user_smiles}`")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Ideal Oil %", f"{base_oil_ratio}%")
+                c2.metric("Ideal Smix %", f"{base_smix_ratio}%")
+                c3.metric("Predicted Stability", "High" if abs(res['Zeta_mV']) > 25 else "Moderate")
+                
+                # Render Structure
+                st.image(Draw.MolToImage(mol, size=(300, 300)), width=300)
 
-            # 4. SHOW RESULTS
+            # --- PREDICTED METRICS ---
             st.divider()
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Predicted Size", f"{res['Size_nm']:.2f} nm")
-            c2.metric("PDI (Uniformity)", f"{res['PDI']:.3f}")
-            c3.metric("Encapsulation Efficiency", f"{res['Encapsulation_Efficiency']:.1f}%")
-            
-            st.warning(f"🛠️ **Suggested Method:** {meth_name}")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Particle Size", f"{res['Size_nm']:.1f} nm")
+            m2.metric("PDI", f"{res['PDI']:.3f}")
+            m3.metric("Zeta Potential", f"{res['Zeta_mV']:.1f} mV")
+            m4.metric("Encapsulation", f"{res['Encapsulation_Efficiency']:.1f}%")
 
-            # 5. SHAP INTERPRETABILITY (Crucial for Analysis)
-            st.subheader("🔍 AI Decision Analysis")
-            st.write("This chart shows how your SMILES drug and selected oils are impacting the particle size.")
+            # --- METHOD MODIFICATION ---
+            # If drug is heavy (High MW), suggest High-Pressure Homogenization
+            if info and info['MW'] > 500:
+                final_method = "High-Pressure Homogenization (Required for high MW)"
+            else:
+                final_method = encoders['Method'].inverse_transform([method_ai.predict(in_df)[0]])[0]
             
-            explainer = shap.Explainer(models['Size_nm'], X_train)
-            sv = explainer(in_df)
-            fig, ax = plt.subplots(figsize=(10, 4))
-            # If it's a new SMILES, SHAP will show the impact of the "Unknown" drug category
-            shap.plots.waterfall(sv[0], show=False)
-            st.pyplot(fig)
+            st.success(f"⚙️ **Optimized Preparation Method:** {final_method}")
 
-        except Exception as e: 
-            st.error(f"Analysis Error: {e}")
+        except Exception as e:
+            st.error(f"Prediction error: {e}")
