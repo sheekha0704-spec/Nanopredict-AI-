@@ -107,6 +107,7 @@ if nav == "Step 1: Sourcing":
             st.session_state.drug = drug
         with c2:
             smiles = st.text_input("Enter Drug SMILES manually", placeholder="Enter string here...")
+            if smiles: st.caption(f"SMILES Registered: {smiles}")
 
         d_subset = df[df['Drug_Name'] == drug]
         o_list, s_list, cs_list = sorted(d_subset['Oil_phase'].unique()), sorted(d_subset['Surfactant'].unique()), sorted(d_subset['Co-surfactant'].unique())
