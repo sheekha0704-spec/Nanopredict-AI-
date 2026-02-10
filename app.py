@@ -36,9 +36,15 @@ def load_and_clean_data(uploaded_file=None):
     df = df.rename(columns=column_mapping)
     df.columns = [c.strip() for c in df.columns]
 
-    def to_float(value):
-        if pd.isna(value): return np.nan
-        val_str = str(value).replace('–', '-').replace('—', '-') # Normalize dashes
+  # Try replacing the to_float function with this more aggressive one:
+def to_float(value):
+    try:
+        # Removes ± symbols and anything after them, and takes the first number found
+        clean_val = str(value).split('±')[0]
+        match = re.search(r"[-+]?\d*\.\d+|\d+", clean_val)
+        return float(match.group()) if match else np.nan
+    except:
+        return np.nan
         
         # Handle conversion from micrometers to nanometers
         multiplier = 1000.0 if 'µm' in val_str.lower() or 'um' in val_str.lower() else 1.0
