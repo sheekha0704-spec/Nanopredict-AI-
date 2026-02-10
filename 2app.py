@@ -14,33 +14,46 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors, Draw
 from PIL import Image
 
-# --- 1. DATA ENGINE ---
+# --- 1. DATA ENGINE (FIXED LINE 14 & 21) ---
 @st.cache_data
 def load_and_clean_data(uploaded_file=None):
-    # Try to find the file even if there are hidden spaces in the name
-    file_name = 'nanoemulsion 2 (2).csv'
+    df = None
     
+    # Check for uploaded file first
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
-    elif os.path.exists(file_name):
-        df = pd.read_csv(file_name)
     else:
-        # Emergency check for similar filenames in directory
-        files = [f for f in os.listdir('.') if 'nanoemulsion' in f.lower()]
-        if files:
-            df = pd.read_csv(files[0])
+        # Search for the file in the repository (handles spaces/brackets)
+        target_name = 'nanoemulsion 2 (2).csv'
+        if os.path.exists(target_name):
+            df = pd.read_csv(target_name)
         else:
-            return None
+            # Look for ANY csv file if the specific name fails
+            all_files = [f for f in os.listdir('.') if f.endswith('.csv')]
+            if all_files:
+                df = pd.read_csv(all_files[0])
+    
+    # STOP if no file was found to avoid Line 21 error
+    if df is None or df.empty:
+        return None
+
+    # Line 21 Fix: Clean column names before mapping
+    df.columns = [c.strip() for c in df.columns]
     
     column_mapping = {
-        'Name of Drug': 'Drug_Name', 'Name of Oil': 'Oil_phase',
-        'Name of Surfactant': 'Surfactant', 'Name of Cosurfactant': 'Co-surfactant',
-        'Particle Size (nm)': 'Size_nm', 'PDI': 'PDI',
-        'Zeta Potential (mV)': 'Zeta_mV', '%EE': 'Encapsulation_Efficiency',
+        'Name of Drug': 'Drug_Name', 
+        'Name of Oil': 'Oil_phase',
+        'Name of Surfactant': 'Surfactant', 
+        'Name of Cosurfactant': 'Co-surfactant',
+        'Particle Size (nm)': 'Size_nm', 
+        'PDI': 'PDI',
+        'Zeta Potential (mV)': 'Zeta_mV', 
+        '%EE': 'Encapsulation_Efficiency',
         'Method Used': 'Method' 
     }
-    df = df.rename(columns=column_mapping)
-    df.columns = [c.strip() for c in df.columns]
+    
+    # Only rename if the original column actually exists
+    df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
 
     def to_float(value):
         if pd.isna(value): return 0.0
@@ -101,7 +114,7 @@ if df is not None:
 if nav == "Step 1: Sourcing":
     st.header("1. Sourcing")
     if df is None:
-        st.error("CSV File not found. Please upload it below.")
+        st.error("⚠️ DATABASE NOT FOUND! Please upload 'nanoemulsion 2 (2).csv' below.")
         up = st.file_uploader("Upload CSV", type="csv")
         if up: st.rerun()
     else:
@@ -110,41 +123,18 @@ if nav == "Step 1: Sourcing":
             drug = st.selectbox("Select Drug", sorted(df['Drug_Name'].unique()))
             st.session_state.drug = drug
         with c2:
-            st.session_state.smiles = st.text_input("Enter SMILES", value=st.session_state.get('smiles', ""))
+            st.session_state.smiles = st.text_input("Enter SMILES (Optional)", value=st.session_state.get('smiles', ""))
         if st.button("Next ➡️"):
             st.session_state.nav_index = 1
             st.rerun()
 
-# --- STEP 2 ---
-elif nav == "Step 2: Solubility":
-    st.header("2. Solubility")
-    if 'drug' not in st.session_state: st.warning("Go back to Step 1")
-    else:
-        st.session_state.f_o = st.selectbox("Oil", sorted(df['Oil_phase'].unique()))
-        st.session_state.f_s = st.selectbox("Surfactant", sorted(df['Surfactant'].unique()))
-        st.session_state.f_cs = st.selectbox("Co-Surfactant", sorted(df['Co-surfactant'].unique()))
-        if st.button("Next ➡️"):
-            st.session_state.nav_index = 2
-            st.rerun()
-
-# --- STEP 3 ---
-elif nav == "Step 3: Ternary":
-    st.header("3. Ternary Optimization")
-    oil = st.slider("Oil %", 5, 40, 15)
-    smix = st.slider("Smix %", 10, 80, 40)
-    fig = go.Figure(go.Scatterternary(a=[oil], b=[smix], c=[100-oil-smix]))
-    st.plotly_chart(fig)
-    if st.button("Next ➡️"):
-        st.session_state.nav_index = 3
-        st.rerun()
-
-# --- STEP 4 ---
+# --- STEP 4 (PREDICTION) ---
 elif nav == "Step 4: AI Prediction":
     st.header("4. Prediction & Chemical Intel")
-    if 'f_o' not in st.session_state: st.error("Incomplete steps")
+    if 'f_o' not in st.session_state: st.error("Please complete previous steps.")
+    elif models is None: st.error("Model not trained. Database missing.")
     else:
         try:
-            # Handle SMILES
             smiles = st.session_state.get('smiles', "").strip()
             if smiles:
                 mol, info = get_mol_data(smiles)
@@ -152,7 +142,6 @@ elif nav == "Step 4: AI Prediction":
                     st.image(Draw.MolToImage(mol, size=(250, 250)), caption="Molecular Structure")
                     st.success(f"MW: {info['MW']:.1f} | LogP: {info['LogP']:.1f}")
 
-            # Prepare Input
             try: d_idx = encoders['Drug_Name'].transform([st.session_state.drug])[0]
             except: d_idx = 0
             
@@ -163,7 +152,6 @@ elif nav == "Step 4: AI Prediction":
                 'Co-surfactant': encoders['Co-surfactant'].transform([st.session_state.f_cs])[0]
             }])
 
-            # Predict
             res = {t: models[t].predict(in_df)[0] for t in models}
             meth = encoders['Method'].inverse_transform([method_ai.predict(in_df)[0]])[0]
 
@@ -171,9 +159,8 @@ elif nav == "Step 4: AI Prediction":
             c1.metric("Size", f"{res['Size_nm']:.2f} nm")
             c1.metric("PDI", f"{res['PDI']:.3f}")
             c2.metric("EE %", f"{res['Encapsulation_Efficiency']:.1f}%")
-            c2.success(f"Method: {meth}")
+            c2.success(f"Recommended Method: {meth}")
 
-            # SHAP
             st.divider()
             explainer = shap.Explainer(models['Size_nm'], X_train)
             sv = explainer(in_df)
@@ -182,3 +169,4 @@ elif nav == "Step 4: AI Prediction":
             st.pyplot(fig)
 
         except Exception as e: st.error(f"Error: {e}")
+
