@@ -189,17 +189,18 @@ elif nav == "Step 4: AI Prediction":
             c_a.metric("Size", f"{res['Size_nm']:.2f} nm"); c_a.metric("EE %", f"{res['Encapsulation_Efficiency']:.2f} %")
             c_b.metric("PDI", f"{res['PDI']:.3f}"); c_b.metric("Stability Score", f"{min(100, (abs(res['Zeta_mV'])/30)*100):.1f}/100")
             c_c.metric("Zeta", f"{res['Zeta_mV']:.2f} mV"); c_c.subheader("🛠️ Appropriate Method"); c_c.success(meth_name)
-
-st.divider()
-            st.subheader("AI Decision Logic: SHAP Analysis")
-            with st.spinner("Analyzing..."):
-                # CHANGE 1: Fixed SHAP using KernelExplainer to avoid 'DenseData' errors
-                model_func = lambda x: models['Size_nm'].predict(x)
-                explainer = shap.KernelExplainer(model_func, shap.kmeans(X_train, 5))
-                shap_values = explainer.shap_values(in_df)
-                fig_sh, ax = plt.subplots(figsize=(10, 4))
-                exp = shap.Explanation(values=shap_values[0], base_values=explainer.expected_value, data=in_df.iloc[0], feature_names=X_train.columns)
-                shap.plots.waterfall(exp, show=False)
+            st.divider()
+                st.subheader("AI Decision Logic: SHAP Analysis Description")
+                st.markdown("""
+                **What is SHAP (SHapley Additive exPlanations)?**
+                SHAP breaks down the prediction to show how much each component (Drug, Oil, Surfactant) contributed to the final result.
+                * **Red Bars:** Increase predicted size.
+                * **Blue Bars:** Decrease predicted size (Nano-effect).
+                """)
+                
+                explainer = shap.Explainer(models['Size_nm'], X_train)
+                sv = explainer(in_df)
+                fig_sh, _ = plt.subplots(figsize=(10, 4))
+                shap.plots.waterfall(sv[0], show=False)
                 st.pyplot(fig_sh)
-        except Exception as e:
-            st.error(f"Prediction Error: {e}")
+        except Exception as e: st.error(f"Error: {str(e)}")
