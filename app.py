@@ -190,13 +190,28 @@ elif nav == "Step 4: AI Prediction":
             c_b.metric("PDI", f"{res['PDI']:.3f}"); c_b.metric("Stability Score", f"{min(100, (abs(res['Zeta_mV'])/30)*100):.1f}/100")
             c_c.metric("Zeta", f"{res['Zeta_mV']:.2f} mV"); c_c.subheader("🛠️ Appropriate Method"); c_c.success(meth_name)
             
-            st.divider()
-            st.subheader("AI Decision Logic: SHAP Analysis")
-            with st.spinner("Calculating logic..."):
-                # FIXED: Added .predict and background masker
-                explainer = shap.Explainer(models['Size_nm'].predict, shap.kmeans(X_train, 10))
-                sv = explainer(in_df)
-                fig_sh, ax = plt.subplots(figsize=(10, 4))
-                shap.plots.waterfall(sv[0], show=False)
-                st.pyplot(fig_sh)
-        except Exception as e: st.error(f"Error: {e}")
+        st.subheader("AI Decision Logic: SHAP Analysis")
+with st.spinner("Calculating logic..."):
+    # 1. Define the prediction function clearly
+    f = lambda x: models['Size_nm'].predict(x)
+    
+    # 2. Use KernelExplainer which is most stable for Scikit-Learn regressors
+    # We use a smaller kmeans sample (5) to ensure it is fast and doesn't crash
+    explainer = shap.KernelExplainer(f, shap.kmeans(X_train, 5))
+    
+    # 3. Calculate SHAP values for the current input
+    shap_values = explainer.shap_values(in_df)
+    
+    # 4. Plotting
+    fig_sh, ax = plt.subplots(figsize=(10, 4))
+    
+    # Create the explanation object for the waterfall plot
+    exp = shap.Explanation(
+        values=shap_values[0], 
+        base_values=explainer.expected_value, 
+        data=in_df.iloc[0], 
+        feature_names=X_train.columns
+    )
+    
+    shap.plots.waterfall(exp, show=False)
+    st.pyplot(fig_sh)
