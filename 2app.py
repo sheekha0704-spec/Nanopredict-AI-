@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 import shap
 import os
 import re
-# NEW IMPORTS FOR CHEMICAL INTELLIGENCE
+
+# NEW IMPORTS FOR CHEMICAL INTELLIGENCE & VISUALIZATION
 from rdkit import Chem
 from rdkit.Chem import Descriptors, Draw
 from PIL import Image
@@ -32,7 +33,7 @@ def load_and_clean_data(uploaded_file=None):
         'PDI': 'PDI',
         'Zeta Potential (mV)': 'Zeta_mV',
         '%EE': 'Encapsulation_Efficiency',
-        'Method Used': 'Method'
+        'Method Used': 'Method' 
     }
     df = df.rename(columns=column_mapping)
     df.columns = [c.strip() for c in df.columns]
@@ -67,7 +68,7 @@ def load_and_clean_data(uploaded_file=None):
 
     return df.dropna(subset=['Drug_Name', 'Oil_phase', 'Surfactant'])
 
-# --- NEW: MOLECULAR DESCRIPTOR ENGINE ---
+# --- MOLECULAR DESCRIPTOR ENGINE ---
 def get_molecular_descriptors(smiles):
     try:
         mol = Chem.MolFromSmiles(smiles)
@@ -123,9 +124,8 @@ if nav == "Step 1: Sourcing":
             drug = st.selectbox("Select Drug from Database", sorted(df['Drug_Name'].unique()))
             st.session_state.drug = drug
         with c2:
-            # FIXED SMILES INPUT
-            smiles_input = st.text_input("Enter Drug SMILES manually", placeholder="Enter string here...")
-            st.session_state.smiles = smiles_input
+            smiles_val = st.text_input("Enter Drug SMILES manually", placeholder="Enter string here...")
+            st.session_state.smiles = smiles_val
 
         d_subset = df[df['Drug_Name'] == drug]
         o_list, s_list, cs_list = sorted(d_subset['Oil_phase'].unique()), sorted(d_subset['Surfactant'].unique()), sorted(d_subset['Co-surfactant'].unique())
@@ -197,13 +197,16 @@ elif nav == "Step 4: AI Prediction":
                 st.subheader("🧬 Chemical Intelligence")
                 mol = Chem.MolFromSmiles(user_smiles)
                 if mol:
+                    # Draw Molecule
                     img = Draw.MolToImage(mol, size=(300, 300))
                     st.image(img, caption=f"SMILES Structure: {user_smiles}", width=300)
+                    
+                    # Get Descriptors
                     chem_data = get_molecular_descriptors(user_smiles)
                     st.success(f"**Detected Properties:** MW: {chem_data['MW']:.1f} | LogP: {chem_data['LogP']:.1f}")
                     drug_input_val = 0 
                 else:
-                    st.error("Invalid SMILES format.")
+                    st.error("Invalid SMILES format. Using database drug instead.")
                     drug_input_val = encoders['Drug_Name'].transform([st.session_state.drug])[0]
             else:
                 drug_input_val = encoders['Drug_Name'].transform([st.session_state.drug])[0]
@@ -225,19 +228,20 @@ elif nav == "Step 4: AI Prediction":
             c_c.metric("Zeta", f"{res['Zeta_mV']:.2f} mV"); c_c.subheader("🛠️ Appropriate Method"); c_c.success(meth_name)
             
             st.divider()
-            st.subheader("AI Decision Logic: SHAP Analysis Description")
+            st.subheader("AI Decision Logic: SHAP Analysis")
             st.markdown("""
             **What is SHAP?** SHAP shows how much each component contributed to the final result.
             * **Red Bars:** Increase size. * **Blue Bars:** Decrease size (Nano-effect).
             """)
                 
-            # FIXED SHAP FOR GRADIENT BOOSTING
-            f = lambda x: models['Size_nm'].predict(x)
-            explainer = shap.KernelExplainer(f, shap.kmeans(X_train, 5))
-            sv = explainer.shap_values(in_df)
-            fig_sh, _ = plt.subplots(figsize=(10, 4))
-            exp = shap.Explanation(values=sv[0], base_values=explainer.expected_value, data=in_df.iloc[0], feature_names=X_train.columns)
-            shap.plots.waterfall(exp, show=False)
-            st.pyplot(fig_sh)
+            # FIXED SHAP LOGIC FOR ROBUSTNESS
+            with st.spinner("Calculating SHAP values..."):
+                f = lambda x: models['Size_nm'].predict(x)
+                explainer = shap.KernelExplainer(f, shap.kmeans(X_train, 5))
+                sv = explainer.shap_values(in_df)
+                fig_sh, _ = plt.subplots(figsize=(10, 4))
+                exp = shap.Explanation(values=sv[0], base_values=explainer.expected_value, data=in_df.iloc[0], feature_names=X_train.columns)
+                shap.plots.waterfall(exp, show=False)
+                st.pyplot(fig_sh)
             
         except Exception as e: st.error(f"Error: {str(e)}")
