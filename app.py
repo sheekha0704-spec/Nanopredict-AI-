@@ -192,10 +192,11 @@ elif nav == "Step 4: AI Prediction":
             
             st.divider()
             st.subheader("AI Decision Logic: SHAP Analysis")
-explainer = shap.Explainer(models['Size_nm'].predict, shap.kmeans(X_train, 10))
-            explainer = shap.Explainer(models['Size_nm'].predict, X_train.iloc[:50])
-            sv = explainer(in_df)
-            fig_sh, ax = plt.subplots(figsize=(10, 4))
-            shap.plots.waterfall(sv[0], show=False)
-            st.pyplot(fig_sh)
-    except Exception as e: st.error(f"Error: {e}")
+            with st.spinner("Calculating logic..."):
+                # FIXED: Added .predict and background masker
+                explainer = shap.Explainer(models['Size_nm'].predict, shap.kmeans(X_train, 10))
+                sv = explainer(in_df)
+                fig_sh, ax = plt.subplots(figsize=(10, 4))
+                shap.plots.waterfall(sv[0], show=False)
+                st.pyplot(fig_sh)
+        except Exception as e: st.error(f"Error: {e}")
