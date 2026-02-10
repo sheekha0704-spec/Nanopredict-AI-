@@ -192,7 +192,7 @@ elif nav == "Step 4: AI Prediction":
             
             st.divider()
             st.subheader("AI Decision Logic: SHAP Analysis")
-            with st.spinner("Analyzing Decision Logic..."):
+explainer = shap.Explainer(models['Size_nm'].predict, shap.maskers.Independent(X_train, max_samples=100))
             explainer = shap.Explainer(models['Size_nm'].predict, X_train.iloc[:50])
             sv = explainer(in_df)
             fig_sh, ax = plt.subplots(figsize=(10, 4))
