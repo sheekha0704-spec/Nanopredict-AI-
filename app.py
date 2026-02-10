@@ -8,6 +8,22 @@ import matplotlib.pyplot as plt
 import shap
 import os
 import re
+from rdkit import Chem
+from rdkit.Chem import Descriptors
+
+def get_molecular_descriptors(smiles):
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol:
+            return {
+                'MW': Descriptors.MolWt(mol),
+                'LogP': Descriptors.MolLogP(mol),
+                'HBD': Descriptors.NumHDonors(mol),
+                'TPSA': Descriptors.TPSA(mol)
+            }
+    except:
+        pass
+    return {'MW': 400.0, 'LogP': 3.0, 'HBD': 2, 'TPSA': 60.0} # Averages
 
 # --- 1. DATA ENGINE ---
 @st.cache_data
