@@ -102,7 +102,7 @@ Dorzolamide HCl (NE 10),Triacetin,Cremophor EL,PG,2.0 / 13.5 / 4.5 (Smix 3:1),Me
 Dorzolamide HCl (NE 14),Triacetin,Cremophor EL + Tween 80 (1:1),PG,2.0 / 13.5 / 4.5 (Smix 3:1),Mentioned,Not Stated,Not Stated,Stable,9.5 ± 0.7,Not Stated,Water titration,Viscosity: 5.45 mPa s,,
 Dill Essential Oil (F9),Dill EO,Tween 20,Not Stated,1.2% Oil / 25.0% Surf,Not Stated,Not Stated,1.4 (PSD),Stable (30 days/ 200x dilution),10.7 ± 3,Not Stated,Spontaneous emulsification,TEM size: ~11.1 nm,,
 Dill Essential Oil (F2),Dill EO,Tween 20,Ethanol,1.2 / 5.0 / 5.0,Not Stated,Not Stated,1.4 (PSD),Unstable after 200x dilution,17.1 ± 4,Not Stated,Spontaneous emulsification,Not Stated,,
-Polymethoxyflavone (PMF),Corn Oil,$\beta$-lactoglobulin (BLG),Not Stated,5.0% Oil / 1% Emulsifier,Not Stated,-56 ± 2,0.1–0.3,Crystals formed & sedimented,174 ± 3,Not Stated,High pressure homogenization,Highly anionic droplet charge,,
+Polymethoxyflavone (PMF),Corn Oil,beta-lactoglobulin (BLG),Not Stated,5.0% Oil / 1% Emulsifier,Not Stated,-56 ± 2,0.1–0.3,Crystals formed & sedimented,174 ± 3,Not Stated,High pressure homogenization,Highly anionic droplet charge,,
 Polymethoxyflavone (PMF),MCT,Lyso-Lecithin,Not Stated,5.0% Oil / 1% Emulsifier,Not Stated,-74 ± 3,0.1–0.3,Crystals formed & sedimented,162 ± 2,Not Stated,High pressure homogenization,pH 7.0 buffer phase,,
 Diclofenac Diethylamine (F1),Oleic Acid,Polysorbate 20,Ethanol,15.0 / 18.3 / 36.7 (Smix 1:2),Mentioned (Pseudoternary),Not Stated,0.28 ± 0.07,Physically stable,59.97 ± 3.22,Not Stated,Spontaneous (Aqueous titration),Optimized for NE Gel,,
 Etoricoxib (F9),Triacetin,Cremophor RH 40,Transcutol P,20.0 / 25.3 / 12.7 (Smix 2:1),Mentioned (Constructed),Not Stated,0.44 ± 0.08,Stable (Thermodynamic tests),50.67 ± 6.03,Not Stated,Spontaneous (Aqueous titration),Viscosity: 80.06 cps,,
@@ -162,3 +162,4 @@ Basil Oil,Basil oil (Ocimum basilicum),Tween 80,Not Stated,6% Oil; 18% Surfactan
 Eugenol,Eugenol (Drug as oil phase),Tween 80,Labrasol,5% Oil; 10% $S_{mix}$ ($S_{mix}$ ratio 4:1),Yes (Fig 2),-10.05,0.238,Kinetically stable for 14 weeks,89.98,Not Stated,Aqueous micro titration followed by ultrasonication,Optimized via central composite design,,
 
 Anise Extract,Anise extract (Bulk),Tween 80,Not Stated,5 mL extract; 10 mL water; 5% Tween 80,Not Stated,Not Stated,0.23,Stable formulation for several months,440,Not Stated,Ultrasound-assisted,Contains anethole (37%) as major component,,
+
