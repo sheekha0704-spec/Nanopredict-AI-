@@ -166,7 +166,7 @@ elif nav == "Step 3: Ternary":
 
     if st.button("Next: AI Prediction ➡️"): st.session_state.nav_index = 3; st.rerun()
 
-# --- STEP 4: PREDICTION (RECALIBRATED STABILITY) ---
+# --- STEP 4: PREDICTION (RECALIBRATED STABILITY & SHAP DESCRIPTORS) ---
 elif nav == "Step 4: AI Prediction":
     st.header("4. AI Batch Estimation & Explainability")
     if 'f_o' not in st.session_state: st.warning("Please complete steps.")
@@ -180,26 +180,55 @@ elif nav == "Step 4: AI Prediction":
             }])
             res = {t: models[t].predict(in_df)[0] for t in models}
             
-            # Recalibrated Stability Logic
+            # --- Result Calculations ---
             z_val = abs(res['Zeta_mV'])
             p_val = res['PDI']
-            if z_val >= 30 and p_val <= 0.25:
-                stability_str, st_color = "Excellent - Highly Stable System", "green"
-            elif z_val >= 20 or p_val <= 0.35:
-                stability_str, st_color = "Moderate - Fair Stability", "orange"
+            ee_val = res['Encapsulation_Efficiency']
+            
+            # Stability in % (Normalized: 30mV + 0.1 PDI = 100%)
+            stability_score = min(100, max(0, ((z_val / 30) * 70) + ((1 - p_val) * 30)))
+            
+            if stability_score >= 80:
+                stability_str, st_color = "Excellent", "green"
+            elif stability_score >= 50:
+                stability_str, st_color = "Moderate", "orange"
             else:
-                stability_str, st_color = "Low - Immediate Flocculation Risk", "red"
+                stability_str, st_color = "Low", "red"
 
-            ca, cb, cc = st.columns(3)
-            ca.metric("Size", f"{res['Size_nm']:.2f} nm")
+            # --- Display Metrics ---
+            ca, cb, cc, cd = st.columns(4)
+            ca.metric("Particle Size", f"{res['Size_nm']:.2f} nm")
             cb.metric("PDI", f"{p_val:.3f}")
-            cc.metric("Zeta Potential", f"{res['Zeta_mV']:.2f} mV")
+            cc.metric("Encapsulation (%EE)", f"{ee_val:.2f} %")
+            cd.metric("Stability (%)", f"{stability_score:.1f} %", delta=stability_str)
             
             st.divider()
-            st.markdown(f"### Stability Assessment: <span style='color:{st_color}'>{stability_str}</span>", unsafe_allow_html=True)
             
-            st.subheader("🔍 SHAP Feature Influence")
+            # --- SHAP Section ---
+            st.subheader("🔍 AI Decision Logic (SHAP Descriptors)")
+            
             explainer = shap.Explainer(models['Size_nm'], X_train)
             sv = explainer(in_df)
-            fig_sh, _ = plt.subplots(figsize=(10, 4)); shap.plots.waterfall(sv[0], show=False); st.pyplot(fig_sh)
+            
+            col_graph, col_txt = st.columns([1.5, 1])
+            
+            with col_graph:
+                fig_sh, _ = plt.subplots(figsize=(10, 4))
+                shap.plots.waterfall(sv[0], show=False)
+                st.pyplot(fig_sh)
+            
+            with col_txt:
+                st.markdown("### How to read this graph:")
+                st.write("""
+                The **Waterfall Plot** shows how each component contributes to the final Particle Size:
+                - **Red Bars (Right):** These components are **increasing** the size of your nanoemulsion.
+                - **Blue Bars (Left):** These components are **reducing** the size (improving nano-dispersion).
+                - **E[f(x)]:** This is the average size baseline of the entire database.
+                - **f(x):** This is the specific prediction for your formulation.
+                """)
+                
+                # Dynamic Descriptor Explanation
+                main_impact = encoders['Oil_phase'].inverse_transform([in_df['Oil_phase'][0]])[0]
+                st.info(f"**Key Insight:** Your selection of **{main_impact}** is the primary driver for the current particle size.")
+
         except Exception as e: st.error(f"Error: {str(e)}")
