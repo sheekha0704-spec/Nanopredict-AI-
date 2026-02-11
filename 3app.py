@@ -219,7 +219,7 @@ elif nav == "Step 3: Ternary":
         st.plotly_chart(fig, use_container_width=True)
         
 
-[Image of ternary phase diagram for nanoemulsion]
+#[Image of ternary phase diagram for nanoemulsion]
 
     if st.button("Next: AI Prediction ➡️"):
         st.session_state.nav_index = 3
