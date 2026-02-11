@@ -9,7 +9,7 @@ import shap
 import os
 import re
 
-# --- RDKIT IMPORTS FOR MOLECULAR DRAWING ---
+# --- RDKIT & IMAGE IMPORTS ---
 try:
     from rdkit import Chem
     from rdkit.Chem import Descriptors, Draw
@@ -114,19 +114,19 @@ if nav == "Step 1: Sourcing":
             drug = st.selectbox("Select Drug from Database", sorted(df['Drug_Name'].unique()))
             st.session_state.drug = drug
             
-            # --- RDKIT INTEGRATION ---
-            st.write("---")
-            smiles = st.text_input("Enter Drug SMILES manually", placeholder="Enter string here...")
+            # --- RDKIT CHEMICAL DRAWING SECTION ---
+            st.divider()
+            smiles = st.text_input("Enter Drug SMILES manually", placeholder="e.g. CC(=O)OC1=CC=CC=C1C(=O)O")
             if smiles and RDKIT_AVAILABLE:
                 mol = Chem.MolFromSmiles(smiles)
                 if mol:
+                    # Convert RDKit drawing to PIL Image for Streamlit stability
                     img = Draw.MolToImage(mol, size=(300, 300))
-                    st.image(img, caption=f"Structure for: {smiles}")
-                    st.session_state['manual_logp'] = round(Descriptors.MolLogP(mol), 2)
+                    st.image(img, caption=f"Chemical Structure of Registered SMILES")
                 else:
-                    st.error("Invalid SMILES string.")
+                    st.error("Invalid SMILES string. Please check the chemical format.")
             elif not RDKIT_AVAILABLE:
-                st.warning("RDKit not found. Chemical drawing disabled.")
+                st.info("RDKit library not detected. Install via 'pip install rdkit' to enable drawing.")
 
         with c2:
             d_subset = df[df['Drug_Name'] == drug]
@@ -213,8 +213,6 @@ elif nav == "Step 4: AI Prediction":
             st.markdown("""
             **What is SHAP (SHapley Additive exPlanations)?**
             SHAP breaks down the prediction to show how much each component (Drug, Oil, Surfactant) contributed to the final result.
-            * **Red Bars:** Increase predicted size.
-             * **Blue Bars:** Decrease predicted size (Nano-effect).
             """)
                 
             explainer = shap.Explainer(models['Size_nm'], X_train)
