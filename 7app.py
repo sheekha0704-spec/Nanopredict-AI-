@@ -89,17 +89,37 @@ if df is not None:
     models, encoders, X_train, method_ai = train_models(df)
 
 # --- STEP 1: SOURCING ---
+# --- STEP 1: SOURCING (WITH ACTIVE SMILES RENDERING) ---
 if nav == "Step 1: Sourcing":
     st.header("Step 1: Formulation Sourcing")
     m1, m2, m3 = st.columns(3)
     with m1:
+        st.subheader("📁 Custom Data")
         up_file = st.file_uploader("Upload Lab CSV", type="csv")
         if up_file: st.session_state.custom_file = up_file; st.rerun()
     with m2:
+        st.subheader("💊 Database")
         drug_choice = st.selectbox("Select Drug", get_clean_unique(df, 'Drug_Name'))
         st.session_state.drug = drug_choice
     with m3:
-        smiles = st.text_input("Drug SMILES", value="CC(=O)OC1=CC=CC=C1C(=O)O")
+        st.subheader("🧪 Chemistry Engine")
+        # Fixed SMILES Logic
+        smiles_input = st.text_input("Enter Drug SMILES", value="CC(=O)OC1=CC=CC=C1C(=O)O")
+        if RDKIT_AVAILABLE and smiles_input:
+            try:
+                mol = Chem.MolFromSmiles(smiles_input)
+                if mol:
+                    img = Draw.MolToImage(mol, size=(300, 300))
+                    st.image(img, caption=f"Chemical Structure: {st.session_state.drug}")
+                    # Calculate basic properties for personalization
+                    mw = Descriptors.MolWt(mol)
+                    st.write(f"**Molecular Weight:** {mw:.2f} g/mol")
+                else:
+                    st.error("Invalid SMILES string.")
+            except Exception as e:
+                st.error("Chemical engine error.")
+        else:
+            st.warning("RDKit not installed or SMILES empty.")
     
     st.divider()
     st.subheader("🎯 3-Point Recommendations")
