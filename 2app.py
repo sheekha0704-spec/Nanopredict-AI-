@@ -9,7 +9,7 @@ import shap
 import os
 import re
 
-# --- ADDED RDKIT IMPORTS ---
+# --- ADDED RDKIT & IMAGE IMPORTS ---
 try:
     from rdkit import Chem
     from rdkit.Chem import Descriptors, Draw
@@ -114,19 +114,19 @@ if nav == "Step 1: Sourcing":
             drug = st.selectbox("Select Drug from Database", sorted(df['Drug_Name'].unique()))
             st.session_state.drug = drug
             
-            # --- RDKIT DRAWING LOGIC ---
+            # --- RDKIT DRAWING SECTION ---
             st.divider()
             smiles = st.text_input("Enter Drug SMILES manually", placeholder="e.g. C1=CC=C(C=C1)C(=O)O")
             if smiles and RDKIT_AVAILABLE:
                 mol = Chem.MolFromSmiles(smiles)
                 if mol:
-                    # RDKit image generation
+                    # Generate molecule image using RDKit and Pillow
                     img = Draw.MolToImage(mol, size=(300, 300))
-                    st.image(img, caption="Chemical Structure Registered")
+                    st.image(img, caption="Drug Structure Identified")
                 else:
-                    st.error("Invalid SMILES string.")
+                    st.error("Invalid SMILES format.")
             elif not RDKIT_AVAILABLE:
-                st.warning("Install RDKit to see chemical structures.")
+                st.info("Check requirements.txt to enable chemical drawing.")
 
         with c2:
             d_subset = df[df['Drug_Name'] == drug]
