@@ -9,7 +9,7 @@ import shap
 import os
 import re
 
-# --- RDKIT & IMAGE IMPORTS ---
+# --- ADDED RDKIT IMPORTS ---
 try:
     from rdkit import Chem
     from rdkit.Chem import Descriptors, Draw
@@ -37,7 +37,7 @@ def load_and_clean_data(uploaded_file=None):
         'PDI': 'PDI',
         'Zeta Potential (mV)': 'Zeta_mV',
         '%EE': 'Encapsulation_Efficiency',
-        'Method Used': 'Method'  
+        'Method Used': 'Method' 
     }
     df = df.rename(columns=column_mapping)
     df.columns = [c.strip() for c in df.columns]
@@ -114,19 +114,19 @@ if nav == "Step 1: Sourcing":
             drug = st.selectbox("Select Drug from Database", sorted(df['Drug_Name'].unique()))
             st.session_state.drug = drug
             
-            # --- RDKIT CHEMICAL DRAWING SECTION ---
+            # --- RDKIT DRAWING LOGIC ---
             st.divider()
-            smiles = st.text_input("Enter Drug SMILES manually", placeholder="e.g. CC(=O)OC1=CC=CC=C1C(=O)O")
+            smiles = st.text_input("Enter Drug SMILES manually", placeholder="e.g. C1=CC=C(C=C1)C(=O)O")
             if smiles and RDKIT_AVAILABLE:
                 mol = Chem.MolFromSmiles(smiles)
                 if mol:
-                    # Convert RDKit drawing to PIL Image for Streamlit stability
+                    # RDKit image generation
                     img = Draw.MolToImage(mol, size=(300, 300))
-                    st.image(img, caption=f"Chemical Structure of Registered SMILES")
+                    st.image(img, caption="Chemical Structure Registered")
                 else:
-                    st.error("Invalid SMILES string. Please check the chemical format.")
+                    st.error("Invalid SMILES string.")
             elif not RDKIT_AVAILABLE:
-                st.info("RDKit library not detected. Install via 'pip install rdkit' to enable drawing.")
+                st.warning("Install RDKit to see chemical structures.")
 
         with c2:
             d_subset = df[df['Drug_Name'] == drug]
