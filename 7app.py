@@ -185,74 +185,70 @@ elif nav == "Step 3: Ternary":
         st.session_state.nav_index = 3
         st.rerun()
 
-# --- STEP 4: PREDICTION (RECALIBRATED STABILITY & SHAP) ---
+# --- STEP 4: PREDICTION (RECALIBRATED & ERROR-FREE) ---
 elif nav == "Step 4: AI Prediction":
     st.header("4. AI Batch Estimation & Explainability")
-    if 'f_o' not in st.session_state: st.warning("Please complete steps.")
+    if 'f_o' not in st.session_state:
+        st.warning("Please complete previous steps.")
     else:
         try:
-            # Data Preparation for AI
+            # Prepare Input for AI
             in_df = pd.DataFrame([{
                 'Drug_Name': encoders['Drug_Name'].transform([st.session_state.drug])[0] if st.session_state.drug in encoders['Drug_Name'].classes_ else 0,
                 'Oil_phase': encoders['Oil_phase'].transform([st.session_state.f_o])[0],
                 'Surfactant': encoders['Surfactant'].transform([st.session_state.f_s])[0],
                 'Co-surfactant': encoders['Co-surfactant'].transform([str(st.session_state.f_cs)])[0]
             }])
+            
+            # Generate Predictions
             res = {t: models[t].predict(in_df)[0] for t in models}
-            
-            # --- RECALIBRATED STABILITY LOGIC ---
             z_abs = abs(res['Zeta_mV'])
-            pdi = res['PDI']
-            
-            # Weighted Stability Scoring (Zeta accounts for 70%, PDI for 30%)
-            # A zeta of 30+ is excellent. A PDI below 0.2 is excellent.
-            z_score = (z_abs / 30) * 70 if z_abs < 30 else 70 + (min(z_abs-30, 10))
-            p_score = (max(0, 0.5 - pdi) / 0.5) * 30 
-            
-            stability_pct = min(100, max(5, z_score + p_score))
-            
-            if stability_pct >= 85:
-                status, s_color = "Excellent - High Kinetic Stability", "green"
-            elif stability_pct >= 60:
-                status, s_color = "Good - Stable for Short/Medium Term", "orange"
-            else:
-                status, s_color = "Low - Risk of Phase Separation", "red"
+            pdi_val = res['PDI']
+            ee_val = res['Encapsulation_Efficiency']
 
-            # Results Display
+            # --- Recalibrated Stability Percentage ---
+            # Scoring: Zeta (70 points) + PDI (30 points)
+            zeta_score = (z_abs / 30) * 70 if z_abs < 30 else 70 + (min(z_abs-30, 10))
+            pdi_score = (max(0, 0.5 - pdi_val) / 0.5) * 30
+            stability_pct = min(100, max(5, zeta_score + pdi_score))
+
+            if stability_pct >= 85:
+                status, s_col = "Excellent - High Kinetic Stability", "green"
+            elif stability_pct >= 60:
+                status, s_col = "Good - Stable for Medium Term", "orange"
+            else:
+                status, s_col = "Low - High Risk of Coalescence", "red"
+
+            # --- Display Results ---
             ca, cb, cc, cd = st.columns(4)
             ca.metric("Particle Size", f"{res['Size_nm']:.2f} nm")
-            cb.metric("PDI", f"{pdi:.3f}")
-            cc.metric("Encapsulation (%EE)", f"{res['Encapsulation_Efficiency']:.2f} %")
-            cd.metric("Stability %", f"{stability_pct:.1f} %")
-            
-            st.markdown(f"**Stability Assessment:** <span style='color:{s_color}'>{status}</span>", unsafe_allow_html=True)
+            cb.metric("PDI", f"{pdi_val:.3f}")
+            cc.metric("Encapsulation (%EE)", f"{ee_val:.2f} %")
+            cd.metric("Stability Score", f"{stability_pct:.1f} %")
+
+            st.markdown(f"**Final Assessment:** <span style='color:{s_col}; font-weight:bold'>{status}</span>", unsafe_allow_html=True)
             st.divider()
 
-            # --- SHAP ANALYSIS ---
-            st.subheader("🔍 SHAP Feature Descriptors")
+            # --- SHAP Descriptors & Graph ---
+            st.subheader("🔍 AI Decision Logic (SHAP)")
             explainer = shap.Explainer(models['Size_nm'], X_train)
             sv = explainer(in_df)
-            
-            c_plot, c_expl = st.columns([1.5, 1])
-            with c_plot:
+
+            g_col, t_col = st.columns([1.5, 1])
+            with g_col:
                 fig_sh, _ = plt.subplots(figsize=(10, 4))
                 shap.plots.waterfall(sv[0], show=False)
                 st.pyplot(fig_sh)
-            with c_expl:
+
+            with t_col:
                 st.write("**What does this graph mean?**")
-                st.write("""
-                - **Baseline (E[f(x)]):** The average size calculated from the entire dataset.
-                - **The Bars:** Each bar shows how much a specific choice (like your Oil or Drug) pushed the particle size up or down.
-                - **Blue Bars:** These choices **helped reduce** the particle size (Good for Nanoemulsions).
-                - **Red Bars:** These choices **increased** the particle size.
-                """)
+                st.write("- **Waterfall Plot:** Shows how individual formulation choices pull the particle size away from the average baseline.")
+                st.write("- **Blue Bars:** These components **reduce** the particle size (improving nano-dispersion).")
+                st.write("- **Red Bars:** These components **increase** the particle size.")
+                
+                # Direct variable call to avoid indentation errors
+                selected_oil = st.session_state.f_o
+                st.info(f"**Key Formulation Driver:** {selected_oil}")
 
-        except Exception as e: st.error(f"Error: {str(e)}")
-
-                # Dynamic Descriptor Explanation
-               idx = in_df['Oil_phase'][0]
-                impact_name = encoders['Oil_phase'].inverse_transform([idx])[0]
-                st.info(f"**Key Driver: {impact_name}**")
-                st.info(f"**Key Insight:** Your selection of **{main_impact}** is the primary driver for the current particle size.")
-
-        except Exception as e: st.error(f"Error: {str(e)}")
+        except Exception as e:
+            st.error(f"Prediction Error: {str(e)}")
