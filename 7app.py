@@ -114,25 +114,15 @@ if nav == "Step 1: Sourcing":
         current_profile = {"logp": 2.5, "mw": 200, "hbd": 1} 
 
         if input_mode == "Choose Drug from Database":
-            st.subheader("📁 Database Selection")
             drug_choice = st.selectbox("Select Drug Name", sorted(df['Drug_Name'].unique()) if df is not None else ["No Data"])
             st.session_state.drug = drug_choice
-            
-            # PERSONALIZATION LOGIC: Extract components associated with THIS drug in the dataset
             d_subset = df[df['Drug_Name'] == drug_choice]
             o_rec = clean_list(d_subset['Oil_phase'].unique())
             s_rec = clean_list(d_subset['Surfactant'].unique())
             cs_rec = clean_list(d_subset['Co-surfactant'].unique())
-            
-            # Infer LogP based on the drug's common formulation partners
-            if any(o in str(d_subset['Oil_phase'].values).lower() for o in ['oleic', 'soy', 'olive']):
-                current_profile['logp'] = 4.5
-            else:
-                current_profile['logp'] = 2.1
-            st.info(f"Database Record: {drug_choice}")
+            current_profile['logp'] = 4.5 if any(o in str(d_subset['Oil_phase'].values).lower() for o in ['oleic', 'soy', 'olive']) else 2.1
 
         elif input_mode == "Browse File (Custom Data)":
-            st.subheader("📤 Industrial Upload")
             up_file = st.file_uploader("Upload Lab Results (CSV)", type="csv")
             if up_file:
                 st.session_state.uploaded_df = up_file
@@ -140,25 +130,19 @@ if nav == "Step 1: Sourcing":
             o_rec, s_rec, cs_rec = [], [], []
 
         elif input_mode == "Choose SMILES Profile":
-            st.subheader("🧪 SMILES Analysis")
             smiles = st.text_input("Input Drug SMILES", value="CC(=O)OC1=CC=CC=C1C(=O)O")
             if smiles and RDKIT_AVAILABLE:
                 mol = Chem.MolFromSmiles(smiles)
                 if mol:
-                    st.image(Draw.MolToImage(mol, size=(300, 300)), caption="Molecular Architecture")
+                    st.image(Draw.MolToImage(mol, size=(300, 300)))
                     current_profile['logp'] = Descriptors.MolLogP(mol)
-                    current_profile['mw'] = Descriptors.MolWt(mol)
-                    st.write(f"**Calculated LogP:** {current_profile['logp']:.2f}")
-                    
-                    # CHEMICAL MATCHING LOGIC
                     if current_profile['logp'] > 3.0:
                         o_rec = clean_list([o for o in df['Oil_phase'].unique() if any(x in o.lower() for x in ['oleic', 'soy', 'olive', 'lct'])])
-                        s_rec = clean_list([s for s in df['Surfactant'].unique() if '80' in s or 'lecithin' in s.lower()])
+                        s_rec = clean_list([s for s in df['Surfactant'].unique() if '80' in s])
                     else:
                         o_rec = clean_list([o for o in df['Oil_phase'].unique() if any(x in o.lower() for x in ['capryl', 'labra', 'miglyol', 'mct'])])
                         s_rec = clean_list([s for s in df['Surfactant'].unique() if '20' in s or 'solutol' in s.lower()])
                     cs_rec = clean_list(df['Co-surfactant'].unique())
-                else: st.error("Invalid SMILES.")
             st.session_state.drug = df['Drug_Name'].iloc[0] if df is not None else "Unknown"
 
         st.session_state.current_profile = current_profile
@@ -166,21 +150,23 @@ if nav == "Step 1: Sourcing":
     with c2:
         st.subheader("🎯 Personalised Recommendations")
         if df is not None:
-            # Display matched components
+            # Fallback for recommendations to ensure we always show 2-3
+            o_final = o_rec if len(o_rec) >= 2 else clean_list(df['Oil_phase'].unique())
+            s_final = s_rec if len(s_rec) >= 2 else clean_list(df['Surfactant'].unique())
+            cs_final = cs_rec if len(cs_rec) >= 1 else clean_list(df['Co-surfactant'].unique())
+
             cola, colb, colc = st.columns(3)
             with cola: 
-                st.success("🛢️ Best Oils")
-                for x in o_rec[:5] if o_rec else clean_list(df['Oil_phase'].unique()[:3]): st.write(f"- {x}")
+                st.success("🛢️ Recommended Oils")
+                for x in o_final[:3]: st.write(f"- {x}")
             with colb: 
-                st.success("🧼 Best Surfactants")
-                for x in s_rec[:5] if s_rec else clean_list(df['Surfactant'].unique()[:3]): st.write(f"- {x}")
+                st.success("🧼 Recommended Surfactants")
+                for x in s_final[:3]: st.write(f"- {x}")
             with colc: 
-                st.success("🧪 Best Co-Surfactants")
-                for x in cs_rec[:5] if cs_rec else clean_list(df['Co-surfactant'].unique()[:3]): st.write(f"- {x}")
+                st.success("🧪 Recommended Co-Surfactants")
+                for x in cs_final[:3]: st.write(f"- {x}")
             
-            st.session_state.update({"o_matched": o_rec if o_rec else list(df['Oil_phase'].unique()), 
-                                    "s_matched": s_rec if s_rec else list(df['Surfactant'].unique()), 
-                                    "cs_matched": cs_rec if cs_rec else list(df['Co-surfactant'].unique())})
+            st.session_state.update({"o_matched": o_final, "s_matched": s_final, "cs_matched": cs_final})
 
     if st.button("Next: Solubility Analysis ➡️"):
         st.session_state.nav_index = 1
@@ -193,20 +179,26 @@ elif nav == "Step 2: Solubility":
     else:
         c1, c2 = st.columns(2)
         with c1:
-            sel_o = st.selectbox("Oil Phase", st.session_state.o_matched + ["--- OTHERS ---"] + list(df['Oil_phase'].unique()))
-            sel_s = st.selectbox("Surfactant", st.session_state.s_matched + ["--- OTHERS ---"] + list(df['Surfactant'].unique()))
-            sel_cs = st.selectbox("Co-surfactant", st.session_state.cs_matched + ["--- OTHERS ---"] + list(df['Co-surfactant'].unique()))
+            sel_o = st.selectbox("Select Oil Phase", st.session_state.o_matched + ["--- OTHERS ---"] + list(df['Oil_phase'].unique()))
+            sel_s = st.selectbox("Select Surfactant", st.session_state.s_matched + ["--- OTHERS ---"] + list(df['Surfactant'].unique()))
+            sel_cs = st.selectbox("Select Co-Surfactant", st.session_state.cs_matched + ["--- OTHERS ---"] + list(df['Co-surfactant'].unique()))
             st.session_state.update({"f_o": sel_o, "f_s": sel_s, "f_cs": sel_cs})
         with c2:
             logp_val = st.session_state.current_profile['logp']
+            # Solubility Logic: Oil (direct LogP), Surfactant/Co-Surf (inverse/partial LogP)
             oil_sol = (logp_val * 0.8) + 1.2
+            surf_sol = (6 - logp_val) * 0.45
+            cosurf_sol = (6 - logp_val) * 0.25
+            
             st.metric(f"Solubility in {sel_o}", f"{max(0.1, oil_sol):.2f} mg/mL")
+            st.metric(f"Solubility in {sel_s}", f"{max(0.1, surf_sol):.2f} mg/mL")
+            st.metric(f"Solubility in {sel_cs}", f"{max(0.05, cosurf_sol):.2f} mg/mL")
 
         if st.button("Next: Ternary Mapping ➡️"):
             st.session_state.nav_index = 2
             st.rerun()
 
-# --- STEP 3: TERNARY ---
+# --- STEP 3: TERNARY --- (Kept as requested)
 elif nav == "Step 3: Ternary":
     st.header("3. Ternary Phase Optimization")
     l, r = st.columns([1, 2])
@@ -225,7 +217,7 @@ elif nav == "Step 3: Ternary":
         st.session_state.nav_index = 3
         st.rerun()
 
-# --- STEP 4: PREDICTION ---
+# --- STEP 4: PREDICTION --- (Includes SHAP Descriptors)
 elif nav == "Step 4: AI Prediction":
     st.header("4. AI Batch Estimation & Explainability")
     if 'f_o' not in st.session_state: st.warning("Please complete steps.")
@@ -242,22 +234,15 @@ elif nav == "Step 4: AI Prediction":
             meth_name = encoders['Method'].inverse_transform([meth_idx])[0]
             
             ca, cb, cc = st.columns(3)
-            with ca:
-                st.metric("Size", f"{res['Size_nm']:.2f} nm")
-                st.metric("EE %", f"{res['Encapsulation_Efficiency']:.2f} %")
-            with cb:
-                st.metric("PDI", f"{res['PDI']:.3f}")
-                st.metric("Stability Score", f"{min(100, (abs(res['Zeta_mV'])/30)*100):.1f}/100")
-            with cc:
-                st.metric("Zeta", f"{res['Zeta_mV']:.2f} mV")
-                st.success(f"Method: {meth_name}")
+            with ca: st.metric("Size", f"{res['Size_nm']:.2f} nm"); st.metric("EE %", f"{res['Encapsulation_Efficiency']:.2f} %")
+            with cb: st.metric("PDI", f"{res['PDI']:.3f}"); st.metric("Stability", f"{min(100, (abs(res['Zeta_mV'])/30)*100):.1f}/100")
+            with cc: st.metric("Zeta", f"{res['Zeta_mV']:.2f} mV"); st.success(f"Method: {meth_name}")
             
             st.divider()
             st.subheader("🔍 SHAP Feature Descriptors")
             explainer = shap.Explainer(models['Size_nm'], X_train)
             sv = explainer(in_df)
             
-            # TEXT-BASED SHAP DESCRIPTORS
             cols = st.columns(4)
             features = ["Drug Selection", "Oil Phase", "Surfactant", "Co-surfactant"]
             for i, feat in enumerate(features):
@@ -267,9 +252,7 @@ elif nav == "Step 4: AI Prediction":
                 cols[i].markdown(f"**{feat}**")
                 cols[i].markdown(f"<span style='color:{color}'>{direction} size by {abs(impact):.2f} nm</span>", unsafe_allow_html=True)
 
-            st.write("### AI Decision Logic (Waterfall Plot)")
             fig_sh, _ = plt.subplots(figsize=(10, 4))
             shap.plots.waterfall(sv[0], show=False)
             st.pyplot(fig_sh)
-            
         except Exception as e: st.error(f"Error: {str(e)}")
