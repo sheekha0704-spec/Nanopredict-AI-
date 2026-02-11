@@ -147,33 +147,41 @@ elif nav == "Step 2: Solubility":
 
     if st.button("Next: Ternary Mapping ➡️"): st.session_state.nav_index = 2; st.rerun()
 
-# --- STEP 3: TERNARY (RECALIBRATED MAPPING) ---
+# --- STEP 3: PERSONALISED TERNARY MAPPING ---
 elif nav == "Step 3: Ternary":
-    st.header("3. Ternary Phase Mapping")
+    st.header(f"3. Ternary Phase Mapping for {st.session_state.get('drug', 'Drug')}")
     l, r = st.columns([1, 2])
+    
+    # Calculate drug-specific center point from historical data
+    drug_data = df[df['Drug_Name'] == st.session_state.get('drug')]
+    # Default to standard nanoemulsion zones if drug data is sparse
+    avg_size = drug_data['Size_nm'].mean() if not drug_data.empty else 200
+    
+    # Personalization Logic: Drugs that historically form smaller particles 
+    # are mapped with a "tight" stability zone.
+    zone_shift = min(10, max(-10, (avg_size - 150) / 10)) 
+
     with l:
         st.markdown("### Formulation Input")
         oil_val = st.slider("Oil Content (%)", 5, 50, 15)
         smix_val = st.slider("Smix (Surf/Co-Surf) %", 10, 80, 45)
-        st.info("The green zone represents the theoretically stable O/W nanoemulsion region for your selected components.")
+        st.info(f"Mapping based on historical stability profile of {st.session_state.drug}.")
+
     with r:
-        # Recalibrated stable region: Typical for High-Smix systems
-        # a=Oil, b=Smix, c=Water
-        za = [0, 25, 15, 0]    # Oil boundaries
-        zb = [40, 65, 85, 40]  # Smix boundaries
+        # Data-Driven Coordinates: Shifting based on historical drug performance
+        za = [0, 25 - zone_shift, 15, 0]    
+        zb = [40 + zone_shift, 65, 85, 40 + zone_shift]  
         zc = [100 - a - b for a, b in zip(za, zb)]
         
         fig = go.Figure()
-        # Stable Region
         fig.add_trace(go.Scatterternary(
-            name='Stable Nanoemulsion Zone', 
+            name='Drug-Specific Stable Zone', 
             mode='lines', a=za, b=zb, c=zc, 
-            fill='toself', fillcolor='rgba(0,255,100,0.25)', 
+            fill='toself', fillcolor='rgba(0,255,100,0.2)', 
             line=dict(color='green', width=2)
         ))
-        # User Selection
         fig.add_trace(go.Scatterternary(
-            name='Your Formulation', 
+            name='Current Selection', 
             mode='markers', a=[oil_val], b=[smix_val], c=[100-oil_val-smix_val], 
             marker=dict(size=18, color='red', symbol='diamond', line=dict(width=2, color='white'))
         ))
@@ -185,14 +193,13 @@ elif nav == "Step 3: Ternary":
         st.session_state.nav_index = 3
         st.rerun()
 
-# --- STEP 4: PREDICTION (RECALIBRATED & ERROR-FREE) ---
+# --- STEP 4: PREDICTION (ZETA & PERSONALISED ASSESSMENT) ---
 elif nav == "Step 4: AI Prediction":
-    st.header("4. AI Batch Estimation & Explainability")
+    st.header(f"4. AI Prediction for {st.session_state.get('drug', 'Drug')}")
     if 'f_o' not in st.session_state:
         st.warning("Please complete previous steps.")
     else:
         try:
-            # Prepare Input for AI
             in_df = pd.DataFrame([{
                 'Drug_Name': encoders['Drug_Name'].transform([st.session_state.drug])[0] if st.session_state.drug in encoders['Drug_Name'].classes_ else 0,
                 'Oil_phase': encoders['Oil_phase'].transform([st.session_state.f_o])[0],
@@ -200,55 +207,51 @@ elif nav == "Step 4: AI Prediction":
                 'Co-surfactant': encoders['Co-surfactant'].transform([str(st.session_state.f_cs)])[0]
             }])
             
-            # Generate Predictions
             res = {t: models[t].predict(in_df)[0] for t in models}
-            z_abs = abs(res['Zeta_mV'])
+            z_val = res['Zeta_mV']
+            z_abs = abs(z_val)
             pdi_val = res['PDI']
             ee_val = res['Encapsulation_Efficiency']
 
-            # --- Recalibrated Stability Percentage ---
-            # Scoring: Zeta (70 points) + PDI (30 points)
-            zeta_score = (z_abs / 30) * 70 if z_abs < 30 else 70 + (min(z_abs-30, 10))
+            # --- Personalized Stability Calibration ---
+            # Some drugs are naturally more unstable; we adjust the "pass" threshold
+            # based on drug historical variance in the dataset.
+            drug_variance = df[df['Drug_Name'] == st.session_state.drug]['Zeta_mV'].std()
+            stability_threshold = 25 if drug_variance < 5 else 30 # Tighter threshold for volatile drugs
+
+            zeta_score = (z_abs / stability_threshold) * 70 if z_abs < stability_threshold else 70 + (min(z_abs-stability_threshold, 10))
             pdi_score = (max(0, 0.5 - pdi_val) / 0.5) * 30
             stability_pct = min(100, max(5, zeta_score + pdi_score))
 
             if stability_pct >= 85:
-                status, s_col = "Excellent - High Kinetic Stability", "green"
+                status, s_col = f"Excellent for {st.session_state.drug}", "green"
             elif stability_pct >= 60:
-                status, s_col = "Good - Stable for Medium Term", "orange"
+                status, s_col = f"Acceptable for {st.session_state.drug}", "orange"
             else:
-                status, s_col = "Low - High Risk of Coalescence", "red"
+                status, s_col = "Sub-optimal: Risk of Phase Separation", "red"
 
             # --- Display Results ---
-            ca, cb, cc, cd = st.columns(4)
-            ca.metric("Particle Size", f"{res['Size_nm']:.2f} nm")
-            cb.metric("PDI", f"{pdi_val:.3f}")
-            cc.metric("Encapsulation (%EE)", f"{ee_val:.2f} %")
-            cd.metric("Stability Score", f"{stability_pct:.1f} %")
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Size", f"{res['Size_nm']:.2f} nm")
+            c2.metric("PDI", f"{pdi_val:.3f}")
+            c3.metric("Zeta Potential", f"{z_val:.2f} mV")
+            c4.metric("%EE", f"{ee_val:.2f} %")
+            c5.metric("Stability %", f"{stability_pct:.1f} %")
 
-            st.markdown(f"**Final Assessment:** <span style='color:{s_col}; font-weight:bold'>{status}</span>", unsafe_allow_html=True)
+            st.markdown(f"**Drug-Specific Assessment:** <span style='color:{s_col}; font-weight:bold'>{status}</span>", unsafe_allow_html=True)
             st.divider()
 
-            # --- SHAP Descriptors & Graph ---
-            st.subheader("🔍 AI Decision Logic (SHAP)")
+            # --- SHAP Graph remains the same ---
             explainer = shap.Explainer(models['Size_nm'], X_train)
             sv = explainer(in_df)
-
             g_col, t_col = st.columns([1.5, 1])
             with g_col:
                 fig_sh, _ = plt.subplots(figsize=(10, 4))
                 shap.plots.waterfall(sv[0], show=False)
                 st.pyplot(fig_sh)
-
             with t_col:
-                st.write("**What does this graph mean?**")
-                st.write("- **Waterfall Plot:** Shows how individual formulation choices pull the particle size away from the average baseline.")
-                st.write("- **Blue Bars:** These components **reduce** the particle size (improving nano-dispersion).")
-                st.write("- **Red Bars:** These components **increase** the particle size.")
-                
-                # Direct variable call to avoid indentation errors
-                selected_oil = st.session_state.f_o
-                st.info(f"**Key Formulation Driver:** {selected_oil}")
+                st.info(f"**Primary Driver for {st.session_state.drug}:** {st.session_state.f_o}")
+                st.write("This waterfall chart illustrates how the chemistry of your chosen oil and drug interact to dictate the final droplet size.")
 
         except Exception as e:
             st.error(f"Prediction Error: {str(e)}")
