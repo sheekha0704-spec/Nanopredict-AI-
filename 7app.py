@@ -147,31 +147,51 @@ elif nav == "Step 2: Solubility":
 
     if st.button("Next: Ternary Mapping ➡️"): st.session_state.nav_index = 2; st.rerun()
 
-# --- STEP 3: TERNARY (SIMPLIFIED) ---
+# --- STEP 3: TERNARY (RECALIBRATED MAPPING) ---
 elif nav == "Step 3: Ternary":
     st.header("3. Ternary Phase Mapping")
     l, r = st.columns([1, 2])
     with l:
-        oil_val = st.slider("Oil Content (%)", 0, 50, 15)
-        smix_val = st.slider("Smix Content (%)", 0, 90, 45)
+        st.markdown("### Formulation Input")
+        oil_val = st.slider("Oil Content (%)", 5, 50, 15)
+        smix_val = st.slider("Smix (Surf/Co-Surf) %", 10, 80, 45)
+        st.info("The green zone represents the theoretically stable O/W nanoemulsion region for your selected components.")
     with r:
-        # Static representative stable zone (Boundary tuning removed per request)
-        za, zb = [0, 30, 20, 0], [70, 60, 75, 70]
+        # Recalibrated stable region: Typical for High-Smix systems
+        # a=Oil, b=Smix, c=Water
+        za = [0, 25, 15, 0]    # Oil boundaries
+        zb = [40, 65, 85, 40]  # Smix boundaries
         zc = [100 - a - b for a, b in zip(za, zb)]
+        
         fig = go.Figure()
-        fig.add_trace(go.Scatterternary(name='Stable Region', mode='lines', a=za, b=zb, c=zc, fill='toself', fillcolor='rgba(0,255,100,0.3)', line=dict(color='green')))
-        fig.add_trace(go.Scatterternary(name='Selection', mode='markers', a=[oil_val], b=[smix_val], c=[100-oil_val-smix_val], marker=dict(size=15, color='red')))
+        # Stable Region
+        fig.add_trace(go.Scatterternary(
+            name='Stable Nanoemulsion Zone', 
+            mode='lines', a=za, b=zb, c=zc, 
+            fill='toself', fillcolor='rgba(0,255,100,0.25)', 
+            line=dict(color='green', width=2)
+        ))
+        # User Selection
+        fig.add_trace(go.Scatterternary(
+            name='Your Formulation', 
+            mode='markers', a=[oil_val], b=[smix_val], c=[100-oil_val-smix_val], 
+            marker=dict(size=18, color='red', symbol='diamond', line=dict(width=2, color='white'))
+        ))
+        
         fig.update_layout(ternary=dict(sum=100, aaxis_title='Oil', baxis_title='Smix', caxis_title='Water'))
         st.plotly_chart(fig, use_container_width=True)
 
-    if st.button("Next: AI Prediction ➡️"): st.session_state.nav_index = 3; st.rerun()
+    if st.button("Next: AI Prediction ➡️"):
+        st.session_state.nav_index = 3
+        st.rerun()
 
-# --- STEP 4: PREDICTION (RECALIBRATED STABILITY & SHAP DESCRIPTORS) ---
+# --- STEP 4: PREDICTION (RECALIBRATED STABILITY & SHAP) ---
 elif nav == "Step 4: AI Prediction":
     st.header("4. AI Batch Estimation & Explainability")
     if 'f_o' not in st.session_state: st.warning("Please complete steps.")
     else:
         try:
+            # Data Preparation for AI
             in_df = pd.DataFrame([{
                 'Drug_Name': encoders['Drug_Name'].transform([st.session_state.drug])[0] if st.session_state.drug in encoders['Drug_Name'].classes_ else 0,
                 'Oil_phase': encoders['Oil_phase'].transform([st.session_state.f_o])[0],
@@ -180,53 +200,55 @@ elif nav == "Step 4: AI Prediction":
             }])
             res = {t: models[t].predict(in_df)[0] for t in models}
             
-            # --- Result Calculations ---
-            z_val = abs(res['Zeta_mV'])
-            p_val = res['PDI']
-            ee_val = res['Encapsulation_Efficiency']
+            # --- RECALIBRATED STABILITY LOGIC ---
+            z_abs = abs(res['Zeta_mV'])
+            pdi = res['PDI']
             
-            # Stability in % (Normalized: 30mV + 0.1 PDI = 100%)
-            stability_score = min(100, max(0, ((z_val / 30) * 70) + ((1 - p_val) * 30)))
+            # Weighted Stability Scoring (Zeta accounts for 70%, PDI for 30%)
+            # A zeta of 30+ is excellent. A PDI below 0.2 is excellent.
+            z_score = (z_abs / 30) * 70 if z_abs < 30 else 70 + (min(z_abs-30, 10))
+            p_score = (max(0, 0.5 - pdi) / 0.5) * 30 
             
-            if stability_score >= 80:
-                stability_str, st_color = "Excellent", "green"
-            elif stability_score >= 50:
-                stability_str, st_color = "Moderate", "orange"
+            stability_pct = min(100, max(5, z_score + p_score))
+            
+            if stability_pct >= 85:
+                status, s_color = "Excellent - High Kinetic Stability", "green"
+            elif stability_pct >= 60:
+                status, s_color = "Good - Stable for Short/Medium Term", "orange"
             else:
-                stability_str, st_color = "Low", "red"
+                status, s_color = "Low - Risk of Phase Separation", "red"
 
-            # --- Display Metrics ---
+            # Results Display
             ca, cb, cc, cd = st.columns(4)
             ca.metric("Particle Size", f"{res['Size_nm']:.2f} nm")
-            cb.metric("PDI", f"{p_val:.3f}")
-            cc.metric("Encapsulation (%EE)", f"{ee_val:.2f} %")
-            cd.metric("Stability (%)", f"{stability_score:.1f} %", delta=stability_str)
+            cb.metric("PDI", f"{pdi:.3f}")
+            cc.metric("Encapsulation (%EE)", f"{res['Encapsulation_Efficiency']:.2f} %")
+            cd.metric("Stability %", f"{stability_pct:.1f} %")
             
+            st.markdown(f"**Stability Assessment:** <span style='color:{s_color}'>{status}</span>", unsafe_allow_html=True)
             st.divider()
-            
-            # --- SHAP Section ---
-            st.subheader("🔍 AI Decision Logic (SHAP Descriptors)")
-            
+
+            # --- SHAP ANALYSIS ---
+            st.subheader("🔍 SHAP Feature Descriptors")
             explainer = shap.Explainer(models['Size_nm'], X_train)
             sv = explainer(in_df)
             
-            col_graph, col_txt = st.columns([1.5, 1])
-            
-            with col_graph:
+            c_plot, c_expl = st.columns([1.5, 1])
+            with c_plot:
                 fig_sh, _ = plt.subplots(figsize=(10, 4))
                 shap.plots.waterfall(sv[0], show=False)
                 st.pyplot(fig_sh)
-            
-            with col_txt:
-                st.markdown("### How to read this graph:")
+            with c_expl:
+                st.write("**What does this graph mean?**")
                 st.write("""
-                The **Waterfall Plot** shows how each component contributes to the final Particle Size:
-                - **Red Bars (Right):** These components are **increasing** the size of your nanoemulsion.
-                - **Blue Bars (Left):** These components are **reducing** the size (improving nano-dispersion).
-                - **E[f(x)]:** This is the average size baseline of the entire database.
-                - **f(x):** This is the specific prediction for your formulation.
+                - **Baseline (E[f(x)]):** The average size calculated from the entire dataset.
+                - **The Bars:** Each bar shows how much a specific choice (like your Oil or Drug) pushed the particle size up or down.
+                - **Blue Bars:** These choices **helped reduce** the particle size (Good for Nanoemulsions).
+                - **Red Bars:** These choices **increased** the particle size.
                 """)
-                
+
+        except Exception as e: st.error(f"Error: {str(e)}")
+
                 # Dynamic Descriptor Explanation
                 main_impact = encoders['Oil_phase'].inverse_transform([in_df['Oil_phase'][0]])[0]
                 st.info(f"**Key Insight:** Your selection of **{main_impact}** is the primary driver for the current particle size.")
