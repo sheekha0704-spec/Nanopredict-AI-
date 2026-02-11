@@ -41,7 +41,7 @@ def load_and_clean_data(uploaded_file=None):
     def to_float(value):
         if pd.isna(value): return np.nan
         val_str = str(value).lower().strip()
-        if any(x in val_str for x in ['low', 'not stated', 'not reported', 'nan', 'null']): return np.nan
+        if any(x in val_str for x in ['low', 'not stated', 'not reported', 'nan', 'null', 'unknown']): return np.nan
         multiplier = 1000.0 if 'µm' in val_str or 'um' in val_str else 1.0
         val_str = val_str.replace('–', '-').replace('—', '-')
         nums = re.findall(r"[-+]?\d*\.\d+|\d+", val_str)
@@ -61,7 +61,7 @@ def load_and_clean_data(uploaded_file=None):
     cat_cols = ['Drug_Name', 'Oil_phase', 'Surfactant', 'Co-surfactant', 'Method']
     for col in cat_cols:
         if col in df.columns:
-            df[col] = df[col].astype(str).replace(['Not Stated', 'nan', 'None', 'Unknown', 'null', 'nan'], 'Unknown')
+            df[col] = df[col].astype(str).replace(['Not Stated', 'nan', 'None', 'Unknown', 'null', 'nan', 'unknown'], 'Unknown')
         else:
             df[col] = 'Unknown'
 
@@ -74,11 +74,6 @@ if 'nav_index' not in st.session_state: st.session_state.nav_index = 0
 steps = ["Step 1: Sourcing", "Step 2: Solubility", "Step 3: Ternary", "Step 4: AI Prediction"]
 nav = st.sidebar.radio("Navigation", steps, index=st.session_state.nav_index)
 st.session_state.nav_index = steps.index(nav)
-
-# --- FILE UPLOADER LOGIC ---
-uploaded_file = st.sidebar.file_uploader("Upload Lab Results (CSV)", type="csv")
-if uploaded_file is not None:
-    st.session_state.uploaded_df = uploaded_file
 
 @st.cache_resource
 def train_models(_data):
@@ -95,23 +90,29 @@ def train_models(_data):
     method_model = RandomForestClassifier(n_estimators=50, random_state=42).fit(df_enc[features], df_enc['Method'])
     return models, le_dict, df_enc[features], method_model
 
-df = load_and_clean_data(st.session_state.get('uploaded_df'))
+# Load Data
+df = load_and_clean_data(st.session_state.get('uploaded_df_file'))
 if df is not None:
     models, encoders, X_train, method_ai = train_models(df)
 
 # --- STEP 1: SOURCING ---
 if nav == "Step 1: Sourcing":
     st.header("Step 1: Formulation Sourcing & Profile")
-    input_mode = st.radio("Select Sourcing Method:", ["Choose Drug from Database", "Choose SMILES Profile"], horizontal=True)
+    
+    # ALL 3 OPTIONS ON MAIN SCREEN
+    input_mode = st.radio("Select Sourcing Method:", 
+                         ["Choose Drug from Database", "Browse File (Custom Data)", "Choose SMILES Profile"], 
+                         horizontal=True)
     st.divider()
     
     c1, c2 = st.columns([1, 1.5])
     
     def clean_list(items):
-        return sorted(list(set([x for x in items if str(x).lower() not in ['unknown', 'nan', 'none', 'not stated', 'null', 'nan']])))
+        # Strict removal of nulls/unknowns
+        return sorted(list(set([x for x in items if str(x).lower() not in ['unknown', 'nan', 'none', 'not stated', 'null', 'nan', ''] and x is not None])))
 
     with c1:
-        current_profile = {"logp": 2.5, "mw": 200} 
+        current_profile = {"logp": 2.5, "mw": 250} 
         o_rec, s_rec, cs_rec = [], [], []
 
         if input_mode == "Choose Drug from Database":
@@ -122,6 +123,13 @@ if nav == "Step 1: Sourcing":
             s_rec = clean_list(d_subset['Surfactant'].unique())
             cs_rec = clean_list(d_subset['Co-surfactant'].unique())
             current_profile['logp'] = 4.5 if any(o in str(d_subset['Oil_phase'].values).lower() for o in ['oleic', 'soy', 'olive']) else 2.1
+
+        elif input_mode == "Browse File (Custom Data)":
+            up_file = st.file_uploader("Upload Lab Results (CSV)", type="csv")
+            if up_file:
+                st.session_state.uploaded_df_file = up_file
+                st.success("File uploaded successfully!")
+                st.rerun()
 
         elif input_mode == "Choose SMILES Profile":
             smiles = st.text_input("Input Drug SMILES", value="CC(=O)OC1=CC=CC=C1C(=O)O")
@@ -138,16 +146,18 @@ if nav == "Step 1: Sourcing":
                         o_rec = clean_list([o for o in df['Oil_phase'].unique() if any(x in o.lower() for x in ['capryl', 'labra', 'miglyol', 'mct'])])
                         s_rec = clean_list([s for s in df['Surfactant'].unique() if '20' in s or 'solutol' in s.lower()])
                     cs_rec = clean_list(df['Co-surfactant'].unique())
-            st.session_state.drug = drug_choice if 'drug_choice' in locals() else "Unknown"
+            st.session_state.drug = "Custom_SMILES"
 
         st.session_state.current_profile = current_profile
 
     with c2:
-        st.subheader("🎯 Filtered Recommendations (Non-Null)")
+        st.subheader("🎯 Filtered Recommendations")
         if df is not None:
-            o_final = o_rec[:3] if len(o_rec) >= 1 else clean_list(df['Oil_phase'].unique())[:3]
-            s_final = s_rec[:3] if len(s_rec) >= 1 else clean_list(df['Surfactant'].unique())[:3]
-            cs_final = cs_rec[:3] if len(cs_rec) >= 1 else clean_list(df['Co-surfactant'].unique())[:3]
+            # Fallback to database defaults if selections are empty
+            o_final = o_rec[:3] if o_rec else clean_list(df['Oil_phase'].unique())[:3]
+            s_final = s_rec[:3] if s_rec else clean_list(df['Surfactant'].unique())[:3]
+            cs_final = cs_rec[:3] if cs_rec else clean_list(df['Co-surfactant'].unique())[:3]
+            
             cola, colb, colc = st.columns(3)
             with cola: 
                 st.success("🛢️ Oils"); [st.write(f"- {x}") for x in o_final]
@@ -161,29 +171,32 @@ if nav == "Step 1: Sourcing":
         st.session_state.nav_index = 1
         st.rerun()
 
-# --- STEP 2: SOLUBILITY (AI PREDICTED) ---
+# --- STEP 2: SOLUBILITY (DYNAMIC AI) ---
 elif nav == "Step 2: Solubility":
-    st.header("2. AI-Predicted Solubility (mg/mL)")
+    st.header("2. AI-Predicted Solubility Profile")
     if 'current_profile' not in st.session_state: st.warning("Please complete Step 1.")
     else:
-        logp_val = st.session_state.current_profile['logp']
-        mw_val = st.session_state.current_profile.get('mw', 250)
         c1, c2 = st.columns(2)
         with c1:
-            sel_o = st.selectbox("Oil Phase", st.session_state.o_matched + list(df['Oil_phase'].unique()))
-            sel_s = st.selectbox("Surfactant", st.session_state.s_matched + list(df['Surfactant'].unique()))
-            sel_cs = st.selectbox("Co-Surfactant", st.session_state.cs_matched + list(df['Co-surfactant'].unique()))
+            sel_o = st.selectbox("Oil Phase", st.session_state.o_matched + clean_list(df['Oil_phase'].unique()))
+            sel_s = st.selectbox("Surfactant", st.session_state.s_matched + clean_list(df['Surfactant'].unique()))
+            sel_cs = st.selectbox("Co-Surfactant", st.session_state.cs_matched + clean_list(df['Co-surfactant'].unique()))
             st.session_state.update({"f_o": sel_o, "f_s": sel_s, "f_cs": sel_cs})
+        
         with c2:
-            # AI Predictive Logic (based on Yalkowsky's general solubility theories & LogP)
-            pred_o = (logp_val * 0.82) + (mw_val * 0.001) + 1.1
-            pred_s = (6.2 - logp_val) * 0.48 + (mw_val * 0.0005)
-            pred_cs = (5.8 - logp_val) * 0.28
+            logp = st.session_state.current_profile['logp']
+            mw = st.session_state.current_profile.get('mw', 250)
             
-            st.metric(f"AI Predicted Solubility in {sel_o}", f"{max(0.1, pred_o):.2f}")
-            st.metric(f"AI Predicted Solubility in {sel_s}", f"{max(0.1, pred_s):.2f}")
-            st.metric(f"AI Predicted Solubility in {sel_cs}", f"{max(0.05, pred_cs):.2f}")
-            st.info("💡 Values are estimated using LogP-driven solubility AI.")
+            # DYNAMIC AI SOLUBILITY LOGIC
+            # Oils prefer high LogP; Surfactants/Co-Surfs prefer specific HLB ranges (inversely proportional here)
+            pred_o = (logp * 0.85) + (mw * 0.002) + 0.5
+            pred_s = (7.0 - logp) * 0.5 + (mw * 0.001)
+            pred_cs = (6.5 - logp) * 0.35
+            
+            st.metric(f"AI Predicted Solubility: {sel_o}", f"{max(0.1, pred_o):.2f} mg/mL")
+            st.metric(f"AI Predicted Solubility: {sel_s}", f"{max(0.1, pred_s):.2f} mg/mL")
+            st.metric(f"AI Predicted Solubility: {sel_cs}", f"{max(0.05, pred_cs):.2f} mg/mL")
+            st.info("💡 Predictions adjust dynamically based on Drug Lipophilicity and molecular weight.")
 
         if st.button("Next: Ternary Mapping ➡️"):
             st.session_state.nav_index = 2
@@ -215,7 +228,7 @@ elif nav == "Step 4: AI Prediction":
     else:
         try:
             in_df = pd.DataFrame([{
-                'Drug_Name': encoders['Drug_Name'].transform([st.session_state.drug])[0],
+                'Drug_Name': encoders['Drug_Name'].transform([st.session_state.drug])[0] if st.session_state.drug in encoders['Drug_Name'].classes_ else 0,
                 'Oil_phase': encoders['Oil_phase'].transform([st.session_state.f_o])[0],
                 'Surfactant': encoders['Surfactant'].transform([st.session_state.f_s])[0],
                 'Co-surfactant': encoders['Co-surfactant'].transform([str(st.session_state.f_cs)])[0]
