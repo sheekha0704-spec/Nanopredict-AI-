@@ -66,7 +66,7 @@ def load_and_clean_data(uploaded_file=None):
     cat_cols = ['Drug_Name', 'Oil_phase', 'Surfactant', 'Co-surfactant', 'Method']
     for col in cat_cols:
         if col in df.columns:
-            df[col] = df[col].astype(str).replace(['Not Stated', 'nan', 'None'], 'Unknown')
+            df[col] = df[col].astype(str).replace(['Not Stated', 'nan', 'None', 'Unknown'], 'Unknown')
         else:
             df[col] = 'Unknown'
 
@@ -80,7 +80,9 @@ steps = ["Step 1: Sourcing", "Step 2: Solubility", "Step 3: Ternary", "Step 4: A
 nav = st.sidebar.radio("Navigation", steps, index=st.session_state.nav_index)
 st.session_state.nav_index = steps.index(nav)
 
-df = load_and_clean_data()
+# --- GLOBAL DATA LOADING ---
+uploaded_file = st.sidebar.file_uploader("Upload Laboratory Data (CSV)", type="csv")
+df = load_and_clean_data(uploaded_file)
 
 @st.cache_resource
 def train_models(_data):
@@ -106,6 +108,11 @@ if df is not None:
 if nav == "Step 1: Sourcing":
     st.header("SMILES-Driven Component Sourcing")
     
+    # Optional file upload also available in main area for visibility
+    if df is None:
+        st.error("No database found. Please upload a CSV file to begin.")
+        st.stop()
+
     c1, c2 = st.columns([1, 1.5])
     with c1:
         st.subheader("🧪 Chemical Profile")
@@ -136,23 +143,33 @@ if nav == "Step 1: Sourcing":
         if 'current_profile' in st.session_state:
             p = st.session_state.current_profile
             
+            # Helper to filter out nulls/unknowns from recommendations
+            def clean_list(items):
+                return [x for x in items if str(x).lower() not in ['unknown', 'nan', 'none', 'not stated']]
+
             # Logic: Customize oil/surfactant based on chemical need (LogP)
             if p['logp'] > 3.5:
-                s_oil = [o for o in df['Oil_phase'].unique() if any(x in o.lower() for x in ['oleic', 'olive', 'corn', 'soy'])]
-                s_surf = [s for s in df['Surfactant'].unique() if '80' in s]
+                s_oil = clean_list([o for o in df['Oil_phase'].unique() if any(x in o.lower() for x in ['oleic', 'olive', 'corn', 'soy'])])
+                s_surf = clean_list([s for s in df['Surfactant'].unique() if '80' in s])
             else:
-                s_oil = [o for o in df['Oil_phase'].unique() if any(x in o.lower() for x in ['capryl', 'labra', 'miglyol'])]
-                s_surf = [s for s in df['Surfactant'].unique() if '20' in s or 'lecithin' in s.lower()]
+                s_oil = clean_list([o for o in df['Oil_phase'].unique() if any(x in o.lower() for x in ['capryl', 'labra', 'miglyol'])])
+                s_surf = clean_list([s for s in df['Surfactant'].unique() if '20' in s or 'lecithin' in s.lower()])
             
-            o_final = s_oil if s_oil else list(df['Oil_phase'].unique()[:3])
-            s_final = s_surf if s_surf else list(df['Surfactant'].unique()[:3])
-            cs_final = list(df['Co-surfactant'].unique()[:3])
+            o_final = s_oil if s_oil else clean_list(list(df['Oil_phase'].unique()[:5]))
+            s_final = s_surf if s_surf else clean_list(list(df['Surfactant'].unique()[:5]))
+            cs_final = clean_list(list(df['Co-surfactant'].unique()))
 
             st.info(f"Recommended for LogP {p['logp']:.2f}:")
             col_a, col_b, col_c = st.columns(3)
-            with col_a: st.success("🛢️ **Oils**"); [st.write(f"- {x}") for x in o_final[:3]]
-            with col_b: st.success("🧼 **Surfactants**"); [st.write(f"- {x}") for x in s_final[:3]]
-            with col_c: st.success("🧪 **Co-Surfactants**"); [st.write(f"- {x}") for x in cs_final[:3]]
+            with col_a: 
+                st.success("🛢️ **Oils**")
+                for x in o_final[:3]: st.write(f"- {x}")
+            with col_b: 
+                st.success("🧼 **Surfactants**")
+                for x in s_final[:3]: st.write(f"- {x}")
+            with col_c: 
+                st.success("🧪 **Co-Surfactants**")
+                for x in cs_final[:3]: st.write(f"- {x}")
             
             st.session_state.update({"o_matched": o_final, "s_matched": s_final, "cs_matched": cs_final})
 
@@ -174,7 +191,6 @@ elif nav == "Step 2: Solubility":
 
         with c2:
             logp_val = st.session_state.current_profile['logp']
-            # SMILES-driven Solubility Simulation
             oil_sol = (logp_val * 0.8) + 1.2
             surf_sol = (6 - logp_val) * 0.3
             
@@ -194,7 +210,6 @@ elif nav == "Step 3: Ternary":
         smix, oil = st.slider("Smix %", 10, 80, 40), st.slider("Oil %", 5, 40, 15)
         st.info(f"Water Phase: {100 - oil - smix}%")
     with r:
-        # Dynamic safe zone based on component string lengths as a proxy for complexity
         shift = (len(st.session_state.get('f_o', '')) + len(st.session_state.get('f_s', ''))) % 10
         za = [5+shift, 15+shift, 25+shift, 5+shift]
         zb = [40+shift, 60-shift, 40+shift, 40+shift]
