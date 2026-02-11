@@ -250,10 +250,9 @@ elif nav == "Step 4: AI Prediction":
         except Exception as e: st.error(f"Error: {str(e)}")
 
                 # Dynamic Descriptor Explanation
-                if 'Oil_phase' in encoders:
-                    idx = in_df['Oil_phase'][0]
-                    impact_name = encoders['Oil_phase'].inverse_transform([idx])[0]
-                    st.info(f"**Key Driver:** {impact_name}")
+               idx = in_df['Oil_phase'][0]
+                impact_name = encoders['Oil_phase'].inverse_transform([idx])[0]
+                st.info(f"**Key Driver: {impact_name}**")
                 st.info(f"**Key Insight:** Your selection of **{main_impact}** is the primary driver for the current particle size.")
 
         except Exception as e: st.error(f"Error: {str(e)}")
