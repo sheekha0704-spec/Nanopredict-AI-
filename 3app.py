@@ -114,7 +114,7 @@ if nav == "Step 1: Sourcing":
             drug = st.selectbox("Select Drug from Database", sorted(df['Drug_Name'].unique()))
             st.session_state.drug = drug
             
-            # --- SMILES & STRUCTURE LOGIC ---
+            # --- RDKIT DRAWING LOGIC ---
             st.divider()
             smiles_input = st.text_input("Enter Drug SMILES for Structural Analysis", placeholder="e.g. CC(=O)OC1=CC=CC=C1C(=O)O")
             
@@ -122,20 +122,18 @@ if nav == "Step 1: Sourcing":
                 mol = Chem.MolFromSmiles(smiles_input)
                 if mol:
                     img = Draw.MolToImage(mol, size=(300, 300))
-                    st.image(img, caption=f"Chemical Structure of {drug}")
+                    st.image(img, caption=f"Chemical Structure Identification")
                     
-                    # Store chemical properties
+                    # Store chemical properties for reactive logic in Step 2
                     st.session_state.active_smiles = smiles_input
                     st.session_state.smiles_logp = Descriptors.MolLogP(mol)
                     st.session_state.smiles_mw = Descriptors.MolWt(mol)
                     
-                    # Sidebar Profile Summary
+                    # Profile summary in Sidebar
                     with st.sidebar:
                         st.subheader("🧪 Molecular Profile")
                         st.write(f"LogP: {st.session_state.smiles_logp:.2f}")
-                        st.write(f"Mol. Weight: {st.session_state.smiles_mw:.2f} Da")
-                        if st.session_state.smiles_logp > 5:
-                            st.warning("Lipophilic Alert: LogP > 5")
+                        st.write(f"Mol. Wt: {st.session_state.smiles_mw:.2f}")
                 else:
                     st.error("Invalid SMILES format.")
                     st.session_state.active_smiles = None
@@ -157,7 +155,7 @@ if nav == "Step 1: Sourcing":
             st.session_state.nav_index = 1
             st.rerun()
 
-# --- STEP 2: SOLUBILITY (DRIVEN BY SMILES) ---
+# --- STEP 2: SOLUBILITY (REACTIVE TO SMILES) ---
 elif nav == "Step 2: Solubility":
     st.header("2. Reactive Solubility Profile")
     if 'drug' not in st.session_state: st.warning("Please go back to Step 1")
@@ -167,17 +165,16 @@ elif nav == "Step 2: Solubility":
         
         with c1:
             if use_smiles:
-                st.success("✅ **SMILES Analysis Active**")
-                # Auto-lock based on SMILES profile and database matches
+                st.success("✅ **SMILES Profile Active**")
                 sel_o = st.session_state.o[0] if st.session_state.o else "Oleic Acid"
                 sel_s = st.session_state.s[0] if st.session_state.s else "Tween 80"
                 sel_cs = st.session_state.cs[0] if st.session_state.cs else "PEG 400"
                 
-                st.info(f"Optimization locked for {st.session_state.drug} structure.")
-                st.write(f"**Oil Phase:** {sel_o}")
-                st.write(f"**Surfactant:** {sel_s}")
+                st.info(f"The analysis is locked to the chemical structure of {st.session_state.drug}.")
+                st.write(f"**Oil selected:** {sel_o}")
+                st.write(f"**Surfactant selected:** {sel_s}")
             else:
-                st.info("No SMILES input detected. Manual selection enabled.")
+                st.info("Using manual database selection.")
                 sel_o = st.selectbox("Oil Phase", sorted(df['Oil_phase'].unique()))
                 sel_s = st.selectbox("Surfactant", sorted(df['Surfactant'].unique()))
                 sel_cs = st.selectbox("Co-Surfactant", sorted(df['Co-surfactant'].unique()))
@@ -186,14 +183,13 @@ elif nav == "Step 2: Solubility":
 
         with c2:
             if use_smiles:
-                # LogP determines solubility: High LogP = High Lipophilicity
                 logp = st.session_state.smiles_logp
-                oil_sol = max(1.1, logp * 1.5 + np.random.uniform(0.1, 0.4))
-                surf_sol = max(0.4, (6 - logp) * 0.8 + np.random.uniform(0.05, 0.2))
+                oil_sol = max(1.2, logp * 1.5 + np.random.uniform(0.1, 0.4))
+                surf_sol = max(0.5, (6 - logp) * 0.7 + np.random.uniform(0.1, 0.2))
                 
                 st.metric(f"Solubility in {sel_o}", f"{oil_sol:.2f} mg/mL")
                 st.metric(f"Solubility in {sel_s}", f"{surf_sol:.2f} mg/mL")
-                st.progress(min(1.0, oil_sol/15), text="Calculated Oil Affinity Score")
+                
             else:
                 seed = sum(ord(c) for c in f"{sel_o}{sel_s}{sel_cs}")
                 np.random.seed(seed)
@@ -221,12 +217,10 @@ elif nav == "Step 3: Ternary":
         fig.add_trace(go.Scatterternary(mode='lines', a=za, b=zb, c=zc, fill='toself', fillcolor='rgba(0,255,0,0.2)', line=dict(color='green'), name="Safe Zone"))
         fig.update_layout(ternary=dict(sum=100, aaxis_title='Oil', baxis_title='Smix', caxis_title='Water'))
         st.plotly_chart(fig, use_container_width=True)
-
-    
+        
 
 [Image of ternary phase diagram for nanoemulsion]
 
-    
     if st.button("Next: AI Prediction ➡️"):
         st.session_state.nav_index = 3
         st.rerun()
@@ -252,13 +246,11 @@ elif nav == "Step 4: AI Prediction":
             c_b.metric("PDI", f"{res['PDI']:.3f}"); c_b.metric("Stability Score", f"{min(100, (abs(res['Zeta_mV'])/30)*100):.1f}/100")
             c_c.metric("Zeta", f"{res['Zeta_mV']:.2f} mV"); c_c.subheader("🛠️ Recommended Method"); c_c.success(meth_name)
             
-            st.divider(); st.subheader("AI Decision Logic: SHAP Feature Contribution")
+            st.divider(); st.subheader("AI Decision Logic: SHAP Feature Importance")
             explainer = shap.Explainer(models['Size_nm'], X_train)
             sv = explainer(in_df)
             fig_sh, _ = plt.subplots(figsize=(10, 4))
             shap.plots.waterfall(sv[0], show=False)
             st.pyplot(fig_sh)
             
-            
-
-        except Exception as e: st.error(f"Error in prediction: {str(e)}")
+        except Exception as e: st.error(f"Error: {str(e)}")
