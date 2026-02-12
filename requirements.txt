@@ -1,9 +1,8 @@
 streamlit
 pandas
 numpy
-plotly>=6.0.0
+plotly
 scikit-learn
 matplotlib
 shap
 fpdf
-kaleido>=0.2.1
