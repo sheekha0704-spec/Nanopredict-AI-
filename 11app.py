@@ -1,35 +1,86 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import shap
-
+import plotly.graph_objects as go
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+import matplotlib.pyplot as plt
+import shap
+import os
+import re
+import hashlib
+import io
+import tempfile
+from fpdf import FPDF
 
-st.set_page_config(page_title="NanoPredict AI", layout="wide")
+# --- RDKIT & CHEMICAL ENGINE ---
+try:
+    from rdkit import Chem
+    from rdkit.Chem import Descriptors, Draw
+    import pubchempy as pcp
+    RDKIT_AVAILABLE = True
+except ImportError:
+    RDKIT_AVAILABLE = False
 
-st.title("NanoPredict AI - Intelligent Nanoemulsion Formulation Predictor")
+# --- 1. DATA ENGINE ---
+@st.cache_data
+def load_and_clean_data(uploaded_file=None):
+    df = None
+    try:
+        if uploaded_file is not None:
+            df = pd.read_csv(uploaded_file, encoding='latin1')
+        else:
+            file_path = 'nanoemulsion 2 (2).csv'
+            if os.path.exists(file_path):
+                df = pd.read_csv(file_path, encoding='latin1')
 
-# -------------------------
-# Upload Dataset
-# -------------------------
-st.sidebar.header("Upload Dataset")
-uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+        if df is None:
+            return None
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.success("Dataset Loaded Successfully!")
-else:
-    st.warning("Please upload dataset to continue.")
-    st.stop()
+        column_mapping = {
+            'Name of Drug': 'Drug_Name',
+            'Name of Oil': 'Oil_phase',
+            'Name of Surfactant': 'Surfactant',
+            'Name of Cosurfactant': 'Co-surfactant',
+            'Particle Size (nm)': 'Size_nm',
+            'PDI': 'PDI',
+            'Zeta Potential (mV)': 'Zeta_mV',
+            '%EE': 'Encapsulation_Efficiency',
+            'Method Used': 'Method'
+        }
 
-# -------------------------
-# Model Training Function
-# -------------------------
+        df = df.rename(columns=column_mapping)
+        df.columns = [c.strip() for c in df.columns]
+
+        def to_float(value):
+            if pd.isna(value):
+                return 0.0
+            val_str = str(value).lower().strip()
+            nums = re.findall(r"[-+]?\d*\.\d+|\d+", val_str)
+            return float(nums[0]) if nums else 0.0
+
+        for col in ['Size_nm', 'PDI', 'Zeta_mV', 'Encapsulation_Efficiency']:
+            if col in df.columns:
+                df[col] = df[col].apply(to_float)
+
+        for col in ['Drug_Name', 'Oil_phase', 'Surfactant', 'Co-surfactant', 'Method']:
+            if col in df.columns:
+                df[col] = df[col].astype(str)
+
+        return df
+
+    except:
+        return None
+
+
+# --- 2. MODEL TRAINING WITH EVALUATION ---
 @st.cache_resource
 def train_models(_data):
+
+    if _data is None:
+        return None, None, None, None, None
 
     features = ['Drug_Name', 'Oil_phase', 'Surfactant', 'Co-surfactant']
     targets = ['Size_nm', 'PDI', 'Zeta_mV', 'Encapsulation_Efficiency']
@@ -37,7 +88,6 @@ def train_models(_data):
     df_enc = _data.copy()
     le_dict = {}
 
-    # Encode categorical columns
     for col in features + ['Method']:
         le = LabelEncoder()
         df_enc[col] = le.fit_transform(df_enc[col].astype(str))
@@ -51,9 +101,11 @@ def train_models(_data):
     for target in targets:
         y = df_enc[target]
 
-        # 80:20 Train-Test Split
+        # 80-20 Split
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
+            X, y,
+            test_size=0.2,
+            random_state=42
         )
 
         model = GradientBoostingRegressor(
@@ -66,7 +118,6 @@ def train_models(_data):
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
 
-        # Metrics
         r2 = r2_score(y_test, y_pred)
         mae = mean_absolute_error(y_test, y_pred)
         rmse = np.sqrt(mean_squared_error(y_test, y_pred))
@@ -74,97 +125,75 @@ def train_models(_data):
         evaluation_results[target] = {
             "R2": round(r2, 4),
             "MAE": round(mae, 4),
-            "RMSE": round(rmse, 4)
+            "RMSE": round(rmse, 4),
+            "Train_Size": len(X_train),
+            "Test_Size": len(X_test)
         }
 
         models[target] = model
 
-    # Classification Model (Method)
-    method_model = RandomForestClassifier(
-        n_estimators=100,
-        random_state=42
-    )
+    method_model = RandomForestClassifier(n_estimators=100, random_state=42)
     method_model.fit(X, df_enc['Method'])
 
     return models, le_dict, X_train, method_model, evaluation_results
 
 
-models, encoders, X_train, method_model, eval_metrics = train_models(df)
+# --- 3. APP SETUP ---
+st.set_page_config(page_title="NanoPredict Pro AI", layout="wide")
 
-# -------------------------
-# User Input Section
-# -------------------------
-st.subheader("Enter Formulation Details")
+df = load_and_clean_data()
+models, encoders, X_train, method_ai, eval_metrics = train_models(df)
 
-col1, col2 = st.columns(2)
+steps = ["Step 4: AI Prediction"]
+nav = st.sidebar.radio("Navigation", steps)
 
-with col1:
-    drug = st.selectbox("Drug", df['Drug_Name'].unique())
-    oil = st.selectbox("Oil Phase", df['Oil_phase'].unique())
+# --- STEP 4 ---
+if nav == "Step 4: AI Prediction":
 
-with col2:
-    surfactant = st.selectbox("Surfactant", df['Surfactant'].unique())
-    cosurfactant = st.selectbox("Co-surfactant", df['Co-surfactant'].unique())
+    st.header("AI Prediction & Evaluation")
 
-if st.button("Predict Nanoemulsion Properties"):
+    if df is not None:
 
-    input_dict = {
-        'Drug_Name': encoders['Drug_Name'].transform([drug])[0],
-        'Oil_phase': encoders['Oil_phase'].transform([oil])[0],
-        'Surfactant': encoders['Surfactant'].transform([surfactant])[0],
-        'Co-surfactant': encoders['Co-surfactant'].transform([cosurfactant])[0],
-    }
+        drug = st.selectbox("Drug", df['Drug_Name'].unique())
+        oil = st.selectbox("Oil", df['Oil_phase'].unique())
+        surf = st.selectbox("Surfactant", df['Surfactant'].unique())
+        cosurf = st.selectbox("Co-Surfactant", df['Co-surfactant'].unique())
 
-    input_df = pd.DataFrame([input_dict])
+        def s_enc(col, val):
+            return encoders[col].transform([val])[0]
 
-    st.subheader("Predicted Properties")
+        input_df = pd.DataFrame([{
+            'Drug_Name': s_enc('Drug_Name', drug),
+            'Oil_phase': s_enc('Oil_phase', oil),
+            'Surfactant': s_enc('Surfactant', surf),
+            'Co-surfactant': s_enc('Co-surfactant', cosurf)
+        }])
 
-    results = {}
+        if st.button("Predict"):
 
-    for target, model in models.items():
-        pred = model.predict(input_df)[0]
-        results[target] = round(pred, 3)
+            results = {t: models[t].predict(input_df)[0] for t in models}
 
-    method_pred = method_model.predict(input_df)[0]
-    method_name = encoders['Method'].inverse_transform([method_pred])[0]
+            st.metric("Size (nm)", f"{results['Size_nm']:.2f}")
+            st.metric("PDI", f"{results['PDI']:.3f}")
+            st.metric("Zeta (mV)", f"{results['Zeta_mV']:.2f}")
+            st.metric("EE (%)", f"{results['Encapsulation_Efficiency']:.2f}")
 
-    col1, col2, col3, col4 = st.columns(4)
+            st.divider()
+            st.subheader("Model Evaluation Metrics (Test Data)")
 
-    col1.metric("Size (nm)", results['Size_nm'])
-    col2.metric("PDI", results['PDI'])
-    col3.metric("Zeta Potential (mV)", results['Zeta_mV'])
-    col4.metric("Encapsulation Efficiency (%)", results['Encapsulation_Efficiency'])
+            for target, metrics in eval_metrics.items():
+                st.write(f"### {target}")
+                st.write(f"Train Samples: {metrics['Train_Size']}")
+                st.write(f"Test Samples: {metrics['Test_Size']}")
+                st.write(f"R² Score: {metrics['R2']}")
+                st.write(f"MAE: {metrics['MAE']}")
+                st.write(f"RMSE: {metrics['RMSE']}")
+                st.write("---")
 
-    st.success(f"Recommended Preparation Method: {method_name}")
+            st.subheader("SHAP Explainability (Size)")
+            explainer = shap.Explainer(models['Size_nm'], X_train)
+            shap_values = explainer(input_df)
 
-    # -------------------------
-    # Model Performance Section
-    # -------------------------
-    st.subheader("Model Performance (Test Data)")
-
-    for target, metrics in eval_metrics.items():
-        st.write(f"### {target}")
-        st.write(f"R² Score: {metrics['R2']}")
-        st.write(f"MAE: {metrics['MAE']}")
-        st.write(f"RMSE: {metrics['RMSE']}")
-        st.write("---")
-
-    # -------------------------
-    # SHAP Explainability
-    # -------------------------
-    st.subheader("Explainability (SHAP - Size Prediction)")
-
-    explainer = shap.Explainer(models['Size_nm'], X_train)
-    shap_values = explainer(input_df)
-
-    st.set_option('deprecation.showPyplotGlobalUse', False)
-    shap.plots.waterfall(shap_values[0], show=False)
-    st.pyplot(bbox_inches='tight')
-st.subheader("Model Evaluation Results")
-
-for target, metrics in eval_metrics.items():
-    st.write(f"Target: {target}")
-    st.write(f"R² Score: {metrics['R2']}")
-    st.write(f"MAE: {metrics['MAE']}")
-    st.write(f"RMSE: {metrics['RMSE']}")
-    st.write("------")
+            fig, ax = plt.subplots(figsize=(8, 4))
+            shap.plots.waterfall(shap_values[0], show=False)
+            st.pyplot(fig)
