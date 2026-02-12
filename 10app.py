@@ -165,7 +165,7 @@ elif nav == "Step 4: AI Prediction":
 
     
 
-[Image of a particle size distribution curve]
+#[Image of a particle size distribution curve]
 
 
     c1, c2, c3, c4, c5 = st.columns(5)
