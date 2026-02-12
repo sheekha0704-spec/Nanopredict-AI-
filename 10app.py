@@ -302,7 +302,6 @@ if nav == "Step 4: AI Prediction":
 
     except Exception as e: 
         st.error(f"Error in Step 4 Logic: {e}")
-                    mime="application/pdf"
                 )
 
     except Exception as e: 
