@@ -153,7 +153,7 @@ elif nav == "Step 3: Ternary":
 
 import io
 # --- STEP 4: PREDICTION (WITH FULL PDF REPORT) ---
-elif nav == "Step 4: AI Prediction":
+   elif nav == "Step 4: AI Prediction":
     st.header(f"4. AI Prediction for {st.session_state.get('drug', 'Drug')}")
     try:
         from fpdf import FPDF
