@@ -34,7 +34,7 @@ def load_and_clean_data(uploaded_file=None):
         try:
             df = pd.read_csv(file_path)
         except Exception:
-            df = pd.read_csv(file_path, encoding='latin1')
+            df = pd.read_csv('nanoemulsion 2 (2).csv', encoding='latin1')
     
     if df is None: return None
 
