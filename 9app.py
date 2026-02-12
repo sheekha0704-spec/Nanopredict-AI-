@@ -168,8 +168,9 @@ elif nav == "Step 3: Ternary":
     l, r = st.columns([1, 2])
     with l:
         st.markdown("### Formulation Input")
-        oil_v = st.slider("Oil Content (%)", 1, 50, 15)
-        smix_v = st.slider("Smix (Surf/Co-Surf) %", 1, 90, 45)
+       # Inside Step 3:
+        oil_v = st.slider("Oil Content (%)", 1, 50, 15, key='oil_v') # ADD KEY
+        smix_v = st.slider("Smix %", 1, 90, 45, key='smix_v') # ADD KEY
         water_v = 100 - oil_v - smix_v
         if water_v < 0: st.error("Total Oil + Smix exceeds 100%.")
         else: st.metric("Automatically Calculated Water %", f"{water_v}%")
