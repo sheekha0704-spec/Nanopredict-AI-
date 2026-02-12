@@ -160,3 +160,11 @@ if st.button("Predict Nanoemulsion Properties"):
     st.set_option('deprecation.showPyplotGlobalUse', False)
     shap.plots.waterfall(shap_values[0], show=False)
     st.pyplot(bbox_inches='tight')
+st.subheader("Model Evaluation Results")
+
+for target, metrics in eval_metrics.items():
+    st.write(f"Target: {target}")
+    st.write(f"R² Score: {metrics['R2']}")
+    st.write(f"MAE: {metrics['MAE']}")
+    st.write(f"RMSE: {metrics['RMSE']}")
+    st.write("------")
