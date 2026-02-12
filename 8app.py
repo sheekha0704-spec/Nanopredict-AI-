@@ -119,17 +119,17 @@ if nav == "Step 1: Sourcing":
     st.header("Step 1: Formulation Sourcing")
     m1, m2, m3 = st.columns(3)
     with m1:
-        st.subheader("📁 Custom Data")
+        st.subheader("📁 Browse from the file")
         up_file = st.file_uploader("Upload Lab CSV", type="csv")
         if up_file: 
             st.session_state.custom_file = up_file
             st.rerun()
     with m2:
-        st.subheader("💊 Database")
+        st.subheader("💊 Select Druga from Database")
         drug_choice = st.selectbox("Select Drug", get_clean_unique(df, 'Drug_Name'))
         st.session_state.drug = drug_choice
     with m3:
-        st.subheader("🧪 Chemistry Engine")
+        st.subheader("🧪 Use SMILES")
         smiles_input = st.text_input("Enter Drug SMILES", value="CC(=O)OC1=CC=CC=C1C(=O)O")
         if RDKIT_AVAILABLE and smiles_input:
             try:
