@@ -117,7 +117,9 @@ if nav == "Step 1: Sourcing":
         if up: st.session_state.custom_file = up; st.rerun()
 
     # Dynamic 3-Recommendation Logic
-    d_seed = int(hashlib.md5(st.session_state.drug.encode()).hexdigest(), 16)
+    # Force the drug name to be a string to avoid Tuple errors
+drug_name_str = str(st.session_state.drug)
+d_seed = int(hashlib.md5(drug_name_str.encode()).hexdigest(), 16)
     o_pool = ["MCT", "Oleic Acid", "Capryol 90", "Castor Oil", "Labrafac CC"]
     s_pool = ["Tween 80", "Cremophor EL", "Tween 20", "Labrasol", "Poloxamer"]
     cs_pool = ["PEG-400", "Ethanol", "Transcutol-HP", "Propylene Glycol", "Glycerin"]
