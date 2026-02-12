@@ -6,6 +6,6 @@ matplotlib
 shap
 pubchempy
 rdkit
-fpdf2
+fpdf
 kaleido
 scikit-learn
