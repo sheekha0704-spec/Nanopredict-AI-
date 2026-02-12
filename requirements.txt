@@ -2,9 +2,9 @@ streamlit
 pandas
 numpy
 plotly
-scikit-learn
 matplotlib
 shap
-fpdf
 pubchempy
 rdkit
+fpdf2
+kaleido
