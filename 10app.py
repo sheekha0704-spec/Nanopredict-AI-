@@ -153,7 +153,6 @@ elif nav == "Step 3: Ternary":
 
 import io
 # ... other imports ...
-
 # --- STEP 4: AI FINAL ANALYSIS & SHAP ---
 elif nav == "Step 4: AI Prediction":
     st.header(f"Step 4: AI Characterization for {st.session_state.drug}")
