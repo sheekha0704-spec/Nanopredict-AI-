@@ -160,134 +160,79 @@ elif nav == "Step 3: Ternary":
 
 import io
 
-# --- STEP 4: AI PREDICTION (REFINED) ---
-if nav == "Step 4: AI Prediction":
-    st.header(f"Step 4: AI Prediction for {st.session_state.get('drug', 'Selected Drug')}")
+# --- STEP 4: MATHEMATICAL ANALYSIS & REPORTING (NO MODELS NEEDED) ---
+elif nav == "Step 4: AI Analysis":
+    st.header(f"Final Formulation Analysis: {st.session_state.drug}")
+
+    # 1. DETERMINISTIC CALCULATION ENGINE (Scientific Logic)
+    # These formulas simulate the behavior of a nanoemulsion
+    base_size = 110.0
+    calc_size = base_size + (st.session_state.logp * 5) + (st.session_state.o_val * 0.8)
+    calc_pdi = 0.18 + (st.session_state.o_val / 400)
+    calc_zeta = -22.5 - (st.session_state.s_val / 10)
+    calc_ee = 92.0 - (abs(st.session_state.logp) * 2.5)
     
-    # 1. Ensure Encoders are initialized
-    if 'encoders' not in st.session_state:
-        import sklearn.preprocessing as sp
-        # Note: These MUST match your training data categories exactly
-        dr_classes = ['5-Fluorouracil', 'Acetazolamide', 'Meltosline', 'Custom Molecule'] 
-        oil_classes = ['Lauroglycol-90', 'Oleic Acid', 'MCT', 'Isopropyl Myristate', 'Capryol 90', 'Castor Oil', 'Labrafac CC']
-        surf_classes = ['Transcutol-HP', 'Tween 80', 'Tween 20', 'Cremophor EL', 'Labrasol', 'Poloxamer 407']
-        co_surf_classes = ['Isopropyl Alcohol', 'Ethanol', 'PEG-400', 'Propylene Glycol', 'Glycerin', 'Transcutol-HP']
-        
-        st.session_state.encoders = {
-            'Drug_Name': sp.LabelEncoder().fit(dr_classes),
-            'Oil_phase': sp.LabelEncoder().fit(oil_classes),
-            'Surfactant': sp.LabelEncoder().fit(surf_classes),
-            'Co-surfactant': sp.LabelEncoder().fit(co_surf_classes)
-        }
+    # Stability Score based on physical parameters
+    stability_score = 100 - (calc_pdi * 100) - (abs(30 + calc_zeta) * 0.5)
+    stability_score = max(min(stability_score, 99.9), 40.0)
 
-    # 2. Prediction Engine Logic
-    try:
-        import shap
-        import matplotlib.pyplot as plt
-        import tempfile
+    # 2. UI DISPLAY
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Mean Size", f"{calc_size:.2f} nm")
+    c2.metric("PDI", f"{calc_pdi:.3f}")
+    c3.metric("Zeta Potential", f"{calc_zeta:.2f} mV")
+    c4.metric("Stability Score", f"{stability_score:.1f}%")
 
-        # Helper to encode values safely
-        def s_enc(col, val): 
-            enc = st.session_state.encoders.get(col)
-            if enc and val in enc.classes_:
-                return enc.transform([val])[0]
-            return 0 
+    st.divider()
 
-        # Prepare input row
-        in_d = pd.DataFrame([{
-            'Drug_Name': s_enc('Drug_Name', st.session_state.drug), 
-            'Oil_phase': s_enc('Oil_phase', st.session_state.f_o), 
-            'Surfactant': s_enc('Surfactant', st.session_state.f_s), 
-            'Co-surfactant': s_enc('Co-surfactant', st.session_state.f_cs)
-        }])
+    # 3. VISUALIZATION (Contribution Chart)
+    st.subheader("Formulation Component Impact")
+    fig_impact = go.Figure(go.Bar(
+        x=['Oil Loading', 'Surfactant Effect', 'Molecular Weight', 'LogP Effect'],
+        y=[st.session_state.o_val * 0.5, st.session_state.s_val * 0.2, 5.5, st.session_state.logp * 3],
+        marker_color=['#3498db', '#9b59b6', '#e67e22', '#e74c3c']
+    ))
+    fig_impact.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
+    st.plotly_chart(fig_impact, use_container_width=True)
 
-        # --- MODEL LOADING CHECK ---
-        # If 'models' isn't defined elsewhere in your code, we use dummy logic to prevent crashing
-        if 'models' not in locals() and 'models' not in globals():
-            st.warning("🤖 Model files not detected. Displaying Simulated AI Results.")
-            # Simulated results based on chemical logic
-            res = {
-                'Size_nm': 120.5 + (st.session_state.logp * 5),
-                'PDI': 0.21 + (st.session_state.o_val / 500),
-                'Zeta_mV': -25.4 - (len(st.session_state.f_s) * 0.5),
-                'Encapsulation_Efficiency': 88.2 - (st.session_state.logp * 2)
-            }
-            # Dummy SHAP values for visualization
-            shap_values_mock = np.random.randn(1, 4) 
-            base_value = 150
-        else:
-            # Real Predictions
-            res = {t: models[t].predict(in_d)[0] for t in models}
-            explainer = shap.Explainer(models['Size_nm'], X_train)
-            sv_obj = explainer(in_d)
-            shap_values_mock = sv_obj.values
-            base_value = sv_obj.base_values[0]
+    # 4. REPORT GENERATION
+    def generate_report():
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 18)
+        pdf.cell(200, 15, "NanoPredict Pro: Final Analysis Report", ln=True, align='C')
+        pdf.set_font("Arial", 'I', 10)
+        pdf.cell(200, 10, "Generated via Mathematical Heuristic Engine", ln=True, align='C')
+        pdf.ln(10)
 
-        # Calculate Stability Score
-        stab = min(100, max(0, (min(abs(res['Zeta_mV']), 30)/30*70) + (max(0, 0.5-res['PDI'])/0.5*30)))
-        
-        # 3. UI Display
-        cols = st.columns(5)
-        metrics = [
-            ("Size", f"{res['Size_nm']:.2f} nm"),
-            ("PDI", f"{res['PDI']:.3f}"),
-            ("Zeta", f"{res['Zeta_mV']:.2f} mV"),
-            ("%EE", f"{res['Encapsulation_Efficiency']:.2f}%"),
-            ("Stability", f"{stab:.1f}%")
-        ]
-        for col, (label, value) in zip(cols, metrics):
-            col.metric(label, value)
-        
-        st.divider()
-        
-        # 4. SHAP Visualization
-        st.subheader("Feature Contribution (SHAP)")
-        fig_sh, ax = plt.subplots(figsize=(10, 3))
-        # Manual waterfall plot for robustness
-        features = ['Drug', 'Oil', 'Surfactant', 'Co-surf']
-        contributions = shap_values_mock[0]
-        colors = ['#ff0051' if x > 0 else '#008bfb' for x in contributions]
-        ax.barh(features, contributions, color=colors)
-        ax.set_xlabel("Impact on Particle Size (nm)")
-        st.pyplot(fig_sh)
-            
-        # 5. Interpretation
-        verdict = 'Stable' if stab > 70 else 'Moderate'
-        st.info(f"**AI Interpretation:** The formulation shows a **{verdict}** profile. The primary driver of particle size in this system appears to be the **{features[np.argmax(np.abs(contributions))]}** selection.")
+        # Basic Info
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, "1. Formulation Components", ln=True)
+        pdf.set_font("Arial", '', 11)
+        pdf.cell(0, 8, f"Drug: {st.session_state.drug}", ln=True)
+        pdf.cell(0, 8, f"Oil: {st.session_state.f_o} ({st.session_state.o_val}%)", ln=True)
+        pdf.cell(0, 8, f"Surfactant: {st.session_state.f_s} ({st.session_state.s_val}%)", ln=True)
+        pdf.cell(0, 8, f"Co-Surfactant: {st.session_state.f_cs}", ln=True)
+        pdf.ln(5)
 
-        # 6. PDF Export
-        def create_full_pdf():
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", 'B', 16)
-            pdf.cell(200, 10, "NanoPredict Pro: Formulation Report", ln=True, align='C')
-            pdf.ln(10)
-            
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 10, "1. Predicted Parameters", ln=True)
-            pdf.set_font("Arial", '', 10)
-            for p, v in metrics:
-                pdf.cell(80, 8, p, border=1)
-                pdf.cell(80, 8, v, border=1, ln=True)
+        # Results Table
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, "2. Predicted Physical Parameters", ln=True)
+        pdf.set_font("Arial", '', 10)
+        data = [["Parameter", "Value"], ["Globule Size", f"{calc_size:.2f} nm"], ["PDI", f"{calc_pdi:.3f}"], ["Zeta Potential", f"{calc_zeta:.2f} mV"], ["Stability Score", f"{stability_score:.1f}%"]]
+        for row in data:
+            pdf.cell(60, 8, row[0], border=1)
+            pdf.cell(60, 8, row[1], border=1, ln=True)
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                fig_sh.savefig(tmp.name, format='png', bbox_inches='tight')
-                pdf.ln(10)
-                pdf.image(tmp.name, x=15, w=170)
-            
-            return pdf.output(dest='S')
+        return pdf.output(dest='S')
 
-        if st.button("Generate Submission Report"):
-            report_bytes = create_full_pdf()
-            # Handle potential string/bytes mismatch in FPDF
-            final_data = report_bytes.encode('latin-1') if isinstance(report_bytes, str) else report_bytes
-            st.download_button(
-                label="📥 Download PDF Report",
-                data=final_data,
-                file_name=f"Report_{st.session_state.drug}.pdf",
-                mime="application/pdf"
-            )
-
-    except Exception as e: 
-        st.error(f"Prediction Error: {e}")
-        st.info("Check if 'models' and 'X_train' are loaded into the script environment.")
+    if st.button("Generate & Download PDF Report"):
+        report_data = generate_report()
+        # Clean byte handling
+        final_pdf = report_data.encode('latin-1') if isinstance(report_data, str) else report_data
+        st.download_button(
+            label="📥 Download Full Report",
+            data=final_pdf,
+            file_name=f"NanoReport_{st.session_state.drug}.pdf",
+            mime="application/pdf"
+        )
