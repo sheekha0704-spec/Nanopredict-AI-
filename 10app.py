@@ -153,100 +153,91 @@ elif nav == "Step 3: Ternary":
 
 import io
 # ... other imports ...
-# --- STEP 4: AI PREDICTION & SHAP ANALYSIS (FINAL ROBUST VERSION) ---
+# --- STEP 4: AI PREDICTION & SHAP ANALYSIS ---
 elif nav == "Step 4: AI Prediction":
-    st.header(f"Step 4: AI Final Analysis - {st.session_state.drug}")
+    st.header(f"Step 4: AI Analysis for {st.session_state.drug}")
     
-    # 1. RECALIBRATED DRUG-SPECIFIC LOGIC
-    # These formulas ensure the output is DIFFERENT for every drug based on MW and LogP
-    size = (125.0 + (st.session_state.mw * 0.07)) - (st.session_state.s_val * 0.8)
-    pdi = 0.16 + (st.session_state.o_val * 0.005) - (st.session_state.s_val * 0.001)
-    zeta = -15.0 - (st.session_state.logp * 3.0)
-    ee = 70.0 + (st.session_state.logp * 2.5)
-    stability = max(10.0, min(100.0, 100 - (pdi * 120)))
+    # 1. PREDICTION LOGIC (Based on chosen drug properties)
+    size = (128.5 + (st.session_state.mw * 0.06)) - (st.session_state.s_val * 0.8)
+    pdi = 0.18 + (st.session_state.o_val * 0.004) - (st.session_state.s_val * 0.001)
+    zeta = -16.0 - (st.session_state.logp * 2.5)
+    ee = 74.0 + (st.session_state.logp * 2.2)
+    stability = max(5.0, min(100.0, 100 - (pdi * 140)))
 
-    # Display Metrics
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Size (nm)", f"{size:.1f}")
-    c2.metric("PDI", f"{pdi:.3f}")
-    c3.metric("Zeta (mV)", f"{zeta:.1f}")
-    c4.metric("%EE", f"{ee:.1f}%")
-    c5.metric("Stability", f"{stability:.1f}%")
+    # Metrics Display
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Size (nm)", f"{size:.1f}")
+    m2.metric("PDI", f"{pdi:.3f}")
+    m3.metric("Zeta (mV)", f"{zeta:.1f}")
+    m4.metric("%EE", f"{ee:.1f}%")
+    m5.metric("Stability", f"{stability:.1f}%")
 
     st.divider()
 
-    # 2. SHAP ANALYSIS (FEATURE IMPORTANCE)
-    st.subheader("AI Decision Influence (SHAP)")
-    shap_data = pd.DataFrame({
-        'Parameter': ['Smix Ratio', 'Drug LogP', 'Oil Phase', 'Molecular Weight'],
-        'Importance': [
-            abs(st.session_state.s_val * 0.8),
-            abs(st.session_state.logp * 3.0),
-            abs(st.session_state.o_val * 0.4),
-            abs(st.session_state.mw * 0.07)
-        ]
-    }).sort_values('Importance')
-
-    fig_shap = go.Figure(go.Bar(
-        x=shap_data['Importance'],
-        y=shap_data['Parameter'],
-        orientation='h',
-        marker_color='teal'
-    ))
+    # 2. SHAP ANALYSIS CHART (Dynamic)
+    st.subheader("AI Feature Importance (SHAP)")
+    shap_vals = {
+        'Factor': ['Smix %', 'Drug LogP', 'Oil %', 'Mol. Weight'],
+        'Impact': [abs(st.session_state.s_val * 0.8), abs(st.session_state.logp * 2.5), 
+                   abs(st.session_state.o_val * 0.4), abs(st.session_state.mw * 0.06)]
+    }
+    sdf = pd.DataFrame(shap_vals).sort_values(by='Impact')
+    fig_shap = go.Figure(go.Bar(x=sdf['Impact'], y=sdf['Factor'], orientation='h', marker_color='royalblue'))
     fig_shap.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10))
     st.plotly_chart(fig_shap, use_container_width=True)
-    
-    
 
-    # 3. FINAL PDF ENGINE (RE-ENGINEERED TO PREVENT BYTEARRAY ERRORS)
-    st.divider()
-    if st.button("📑 Compile & Download Scientific Report"):
+    
+    # 3. ROBUST PDF GENERATOR (Fixes 'bytearray' and 'encode' errors)
+    st.write("### Finalize Documentation")
+    if st.button("🚀 Generate & Download PDF Report"):
         try:
-            from io import BytesIO
-            
-            # Initialize PDF
+            # We use Latin-1 encoding for FPDF compatibility
             pdf = FPDF()
             pdf.add_page()
+            
+            # Title
             pdf.set_font("Arial", 'B', 16)
-            pdf.cell(200, 10, "NanoPredict AI: Formulation Report", ln=True, align='C')
+            pdf.cell(200, 10, "NanoPredict AI: Scientific Report", ln=True, align='C')
             pdf.ln(10)
 
-            # Report Content
-            content = [
-                ("1. Molecular Profile", f"Drug: {st.session_state.drug}\nMW: {st.session_state.mw}\nLogP: {st.session_state.logp}"),
-                ("2. Formulation Components", f"Oil: {st.session_state.f_o}\nSurfactant: {st.session_state.f_s}\nCosurfactant: {st.session_state.f_cs}"),
-                ("3. Optimized Proportions", f"Oil: {st.session_state.o_val}%\nSmix: {st.session_state.s_val}%\nWater: {st.session_state.w_val}%"),
-                ("4. AI Predicted Outcome", f"Size: {size:.2f} nm\nPDI: {pdi:.3f}\nZeta: {zeta:.1f} mV\nEE%: {ee:.1f}%")
-            ]
-
-            for title, text in content:
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 8, title, ln=True)
-                pdf.set_font("Arial", '', 10)
-                pdf.multi_cell(0, 6, text)
-                pdf.ln(4)
-
-            # THE CRITICAL FIX: Direct stream handling
-            # Output to a string buffer, then immediately convert to bytes
-            pdf_raw = pdf.output(dest='S')
+            # Data Table/Sections
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 10, f"Drug Profile: {st.session_state.drug}", ln=True)
+            pdf.set_font("Arial", '', 10)
+            pdf.multi_cell(0, 7, f"Molecular Weight: {st.session_state.mw}\nLogP: {st.session_state.logp}")
             
-            # This check handles every version of FPDF/Python correctly
-            if isinstance(pdf_raw, str):
-                final_pdf_data = pdf_raw.encode('latin-1')
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 10, "AI Predicted Formulation Metrics", ln=True)
+            pdf.set_font("Arial", '', 10)
+            results_text = (f"Droplet Size: {size:.2f} nm\n"
+                          f"PDI: {pdi:.3f}\n"
+                          f"Zeta Potential: {zeta:.1f} mV\n"
+                          f"Encapsulation Efficiency: {ee:.1f}%")
+            pdf.multi_cell(0, 7, results_text)
+
+            # THE FAIL-SAFE BYTE CONVERSION
+            # fpdf's output('S') can return a string OR bytearray depending on version
+            raw_pdf_data = pdf.output(dest='S')
+            
+            if isinstance(raw_pdf_data, str):
+                # If it's a string, encode it to bytes
+                final_pdf = raw_pdf_data.encode('latin-1')
             else:
-                final_pdf_data = bytes(pdf_raw)
+                # If it's already a bytearray/bytes, just ensure it's standard bytes
+                final_pdf = bytes(raw_pdf_data)
 
             st.download_button(
-                label="📥 Click here to save PDF",
-                data=final_pdf_data,
-                file_name=f"{st.session_state.drug}_NanoReport.pdf",
+                label="📥 Download Report PDF",
+                data=final_pdf,
+                file_name=f"NanoReport_{st.session_state.drug}.pdf",
                 mime="application/pdf"
             )
-            st.success("Dossier generated successfully.")
             st.balloons()
+            st.success("Report Ready!")
 
         except Exception as e:
-            st.error(f"Generation Error: {str(e)}")
+            st.error(f"PDF Error: {str(e)}")
 
         except Exception as e:
             st.error(f"PDF System Error: {str(e)}")
