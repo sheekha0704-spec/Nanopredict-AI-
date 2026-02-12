@@ -153,26 +153,45 @@ elif nav == "Step 3: Ternary":
 
 import io
 # --- STEP 4: PREDICTION (WITH FULL PDF REPORT) ---\
+# --- STEP 4: AI PREDICTION & COMPREHENSIVE REPORTING ---
 if nav == "Step 4: AI Prediction":
     st.header(f"4. AI Prediction for {st.session_state.get('drug', 'Drug')}")
+    
     try:
         from fpdf import FPDF
         import tempfile
         import io
+        import shap
+        import matplotlib.pyplot as plt
 
-        def s_enc(col, val): 
-            return encoders[col].transform([val])[0] if val in encoders[col].classes_ else 0
+        # 1. ENCODER-SAFE TRANSFORMATION
+        def s_enc(col_name, user_input): 
+            # Check if encoder exists for the column
+            if col_name in encoders:
+                try:
+                    # Match input to encoder classes
+                    return encoders[col_name].transform([user_input])[0]
+                except:
+                    # Fallback if the drug/excipient isn't in the training set
+                    return 0 
+            return 0
         
+        # 2. MATCHING MODEL INPUT FEATURES
+        # Ensure these column names match your X_train.columns EXACTLY
         in_d = pd.DataFrame([{
-            'Drug_Name': s_enc('Drug_Name', st.session_state.drug), 
-            'Oil_phase': s_enc('Oil_phase', st.session_state.f_o), 
-            'Surfactant': s_enc('Surfactant', st.session_state.f_s), 
-            'Co-surfactant': s_enc('Co-surfactant', str(st.session_state.f_cs))
+            'Drug_Name': s_enc('Drug_Name', st.session_state.get('drug', '')), 
+            'Oil_phase': s_enc('Oil_phase', st.session_state.get('f_o', '')), 
+            'Surfactant': s_enc('Surfactant', st.session_state.get('f_s', '')), 
+            'Co-surfactant': s_enc('Co-surfactant', str(st.session_state.get('f_cs', '')))
         }])
         
+        # 3. RUN PREDICTIONS
         res = {t: models[t].predict(in_d)[0] for t in models}
+        
+        # Stability logic based on Zeta and PDI
         stab = min(100, max(0, (min(abs(res['Zeta_mV']), 30)/30*70) + (max(0, 0.5-res['PDI'])/0.5*30)))
         
+        # 4. DISPLAY UI METRICS
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Size", f"{res['Size_nm']:.2f} nm")
         c2.metric("PDI", f"{res['PDI']:.3f}")
@@ -181,23 +200,31 @@ if nav == "Step 4: AI Prediction":
         c5.metric("Stability Score", f"{stab:.1f}%")
         
         st.divider()
-        cg, ct = st.columns([1.5, 1])
+
+        # 5. SHAP WATERFALL PLOT
+        # We use the Size model for the explanation
         explainer = shap.Explainer(models['Size_nm'], X_train)
         sv = explainer(in_d)
         
-        # Display Plot in UI
-        fig_sh, ax = plt.subplots(figsize=(10, 4))
-        shap.plots.waterfall(sv[0], show=False)
-        st.pyplot(fig_sh)
-            
+        cg, ct = st.columns([1.5, 1])
+        with cg:
+            fig_sh, ax = plt.subplots(figsize=(10, 4))
+            shap.plots.waterfall(sv[0], show=False)
+            st.pyplot(fig_sh)
+        
+        
+
         with ct:
-            driver_name = ['Drug', 'Oil', 'Surfactant', 'Co-surfactant'][np.argmax(np.abs(sv.values[0]))]
+            # Determine which feature had the highest absolute SHAP value
+            impact_idx = np.argmax(np.abs(sv.values[0]))
+            driver_name = in_d.columns[impact_idx].replace('_', ' ')
             verdict = 'stable' if stab > 70 else 'moderate'
+            
             st.info("### AI Interpretation")
             st.write(f"**Primary Driver:** {driver_name}")
             st.write(f"**Stability Verdict:** {verdict.capitalize()} profile.")
 
-        # --- COMPREHENSIVE PDF GENERATION ---
+        # 6. FAIL-SAFE PDF GENERATION
         def create_full_pdf(shap_fig):
             pdf = FPDF()
             pdf.add_page()
@@ -210,73 +237,71 @@ if nav == "Step 4: AI Prediction":
             pdf.line(10, 30, 200, 30)
             pdf.ln(10)
 
-            # --- ADDED: COMPOSITION ANALYSIS SECTION ---
+            # Composition Section
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(200, 10, "1. Formulation Composition Analysis", ln=True)
             pdf.set_font("Arial", '', 11)
             
-            # Retrieve values from session state sliders
-            o_v = st.session_state.get('oil_v', 15)
-            s_v = st.session_state.get('smix_v', 45)
+            o_v = st.session_state.get('o_val', 15) # Adjusted key names
+            s_v = st.session_state.get('s_val', 45)
             w_v = 100 - o_v - s_v
             
-            pdf.cell(0, 8, f"- Oil Phase Concentration: {o_v}%", ln=True)
-            pdf.cell(0, 8, f"- Smix (Surfactant/Co-surfactant) Concentration: {s_v}%", ln=True)
+            pdf.cell(0, 8, f"- Oil Phase: {st.session_state.f_o} ({o_v}%)", ln=True)
+            pdf.cell(0, 8, f"- Smix Ratio: {st.session_state.f_s} + {st.session_state.f_cs} ({s_v}%)", ln=True)
             pdf.cell(0, 8, f"- Water Content: {w_v}%", ln=True)
             pdf.ln(5)
             
-            # STEP 1 & 2 SUMMARY
+            # Predictions Table
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "2. Material Selection & Solubility", ln=True)
-            pdf.set_font("Arial", '', 11)
-            pdf.cell(0, 8, f"Selected Drug: {st.session_state.drug}", ln=True)
-            pdf.cell(0, 8, f"Selected Oil Phase: {st.session_state.f_o}", ln=True)
-            pdf.cell(0, 8, f"Selected Surfactant: {st.session_state.f_s}", ln=True)
-            pdf.cell(0, 8, f"Selected Co-Surfactant: {st.session_state.f_cs}", ln=True)
-            pdf.ln(5)
-            
-            # STEP 4 PREDICTIONS TABLE
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "4. AI Prediction Results", ln=True)
+            pdf.cell(200, 10, "2. AI Prediction Results", ln=True)
             pdf.set_font("Arial", 'B', 10)
             pdf.cell(80, 8, "Parameter", border=1, align='C')
             pdf.cell(80, 8, "Predicted Value", border=1, ln=True, align='C')
             
             pdf.set_font("Arial", '', 10)
-            results = [
+            rows = [
                 ("Droplet Size", f"{res['Size_nm']:.2f} nm"),
                 ("PDI", f"{res['PDI']:.3f}"),
                 ("Zeta Potential", f"{res['Zeta_mV']:.2f} mV"),
                 ("Encapsulation Efficiency", f"{res['Encapsulation_Efficiency']:.2f}%"),
                 ("Stability Score", f"{stab:.1f}%")
             ]
-            for p, v in results:
+            for p, v in rows:
                 pdf.cell(80, 8, p, border=1)
                 pdf.cell(80, 8, v, border=1, ln=True)
             
             pdf.ln(10)
             
-            # SHAP WATERFALL IMAGE
+            # Waterfall Image
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "5. Formulation Driver Analysis (SHAP Waterfall)", ln=True)
+            pdf.cell(200, 10, "3. Feature Driver Analysis (SHAP)", ln=True)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                shap_fig.savefig(tmp.name, format='png', bbox_inches='tight')
+                shap_fig.savefig(tmp.name, format='png', bbox_inches='tight', dpi=150)
                 pdf.image(tmp.name, x=15, w=170)
             
+            # Footer
             pdf.set_y(-20)
             pdf.set_font("Arial", 'I', 8)
-            pdf.cell(0, 10, "Report generated via NanoPredict Pro - Proprietary AI Formulation Engine", align='C')
+            pdf.cell(0, 10, "Report generated via NanoPredict Pro AI Engine", align='C')
             
-            return pdf.output(dest='S').encode('latin-1')
+            # Binary Stream Conversion (Fixed for Bytearray error)
+            pdf_out = pdf.output(dest='S')
+            return bytes(pdf_out) if not isinstance(pdf_out, str) else pdf_out.encode('latin-1')
 
-        st.divider()
+        # 7. DOWNLOAD BUTTON
         if st.button("Generate Complete Submission Report"):
-            with st.spinner("Compiling all steps and diagrams into PDF..."):
-                final_pdf = create_full_pdf(fig_sh)
+            with st.spinner("Compiling results..."):
+                final_report_bytes = create_full_pdf(fig_sh)
                 st.download_button(
                     label="📥 Download Submission PDF",
-                    data=final_pdf,
-                    file_name=f"Full_Report_{st.session_state.drug}.pdf",
+                    data=final_report_bytes,
+                    file_name=f"Report_{st.session_state.drug}.pdf",
+                    mime="application/pdf"
+                )
+                st.balloons()
+
+    except Exception as e: 
+        st.error(f"Error in Step 4 Logic: {e}")
                     mime="application/pdf"
                 )
 
