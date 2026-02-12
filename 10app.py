@@ -10,6 +10,28 @@ from rdkit.Chem import Descriptors, Draw
 
 # --- 1. GLOBAL INITIALIZATION ---
 if 'nav_index' not in st.session_state:
+    import joblib
+
+# --- MODEL LOADING ENGINE ---
+@st.cache_resource
+def load_nano_models():
+    try:
+        # Replace these filenames with your actual .joblib or .pkl files
+        models = {
+            'Size_nm': joblib.load('model_size.joblib'),
+            'PDI': joblib.load('model_pdi.joblib'),
+            'Zeta_mV': joblib.load('model_zeta.joblib'),
+            'Encapsulation_Efficiency': joblib.load('model_ee.joblib')
+        }
+        # Load your training feature matrix for SHAP (if available)
+        # X_train = joblib.load('X_train.joblib') 
+        return models #, X_train
+    except Exception as e:
+        st.error(f"Could not load models: {e}")
+        return None
+
+# Initialize models
+loaded_models = load_nano_models()
     st.session_state.update({
         'nav_index': 0, 'drug': "Acetazolamide", 'f_o': "MCT", 'f_s': "Tween 80", 
         'f_cs': "PEG-400", 'o_val': 10.0, 's_val': 60.0, 'w_val': 30.0,
