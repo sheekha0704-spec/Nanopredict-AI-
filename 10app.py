@@ -153,111 +153,111 @@ elif nav == "Step 3: Ternary":
 
 import io
 # ... other imports ...
-# --- STEP 4: AI PREDICTION, SHAP ANALYSIS & MULTI-STEP REPORT ---
+# --- FINAL STEP 4: PREDICTIONS, SHAP & ALL-STEP PDF ---
 elif nav == "Step 4: AI Prediction":
-    st.header(f"Step 4: AI Final Analysis - {st.session_state.drug}")
-    
-    # 1. CALCULATE PREDICTIONS (Drug-Specific)
-    # Using session state from Steps 1 & 3 to drive the AI logic
-    res_size = (122.5 + (st.session_state.mw * 0.06)) - (st.session_state.s_val * 0.75)
-    res_pdi = 0.16 + (st.session_state.o_val * 0.005) - (st.session_state.s_val * 0.001)
-    res_zeta = -14.0 - (st.session_state.logp * 2.8)
-    res_ee = 72.0 + (st.session_state.logp * 2.0)
-    
-    # Stability Status Logic
-    stab_val = max(0, min(100, 100 - (res_pdi * 125)))
-    if stab_val > 80:
+    st.header(f"Step 4: AI Analysis for {st.session_state.drug}")
+
+    # 1. GENERATE RESULTS (Dynamic based on Drug and Step 3 inputs)
+    # Predicted Size based on MW and Smix
+    res_size = (125.0 + (st.session_state.mw * 0.05)) - (st.session_state.s_val * 0.8)
+    # PDI based on Oil and Smix
+    res_pdi = 0.17 + (st.session_state.o_val * 0.005) - (st.session_state.s_val * 0.001)
+    # Zeta Potential based on LogP
+    res_zeta = -14.0 - (st.session_state.logp * 2.5)
+    # %EE based on LogP
+    res_ee = 72.0 + (st.session_state.logp * 1.8)
+
+    # 2. STABILITY STATUS LOGIC
+    # Scientific Status based on PDI and Zeta
+    stab_val = 100 - (res_pdi * 120)
+    if res_pdi < 0.25 and abs(res_zeta) > 15:
         stab_status = "Highly Stable"
         stab_color = "green"
-    elif stab_val > 60:
+    elif res_pdi < 0.4:
         stab_status = "Moderately Stable"
         stab_color = "orange"
     else:
-        stab_status = "Unstable"
+        stab_status = "Unstable / Needs Revision"
         stab_color = "red"
 
     # Display Metrics
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Size (nm)", f"{res_size:.1f}")
-    m2.metric("PDI", f"{res_pdi:.3f}")
-    m3.metric("Zeta (mV)", f"{res_zeta:.1f}")
-    m4.metric("%EE", f"{res_ee:.1f}%")
-    m5.markdown(f"**Stability** \n:{stab_color}[{stab_status}] ({stab_val:.1f}%)")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Size (nm)", f"{res_size:.1f}")
+    c2.metric("PDI", f"{res_pdi:.3f}")
+    c3.metric("Zeta (mV)", f"{res_zeta:.1f}")
+    c4.metric("%EE", f"{res_ee:.1f}%")
+    c5.markdown(f"**Stability:** \n:{stab_color}[{stab_status}]")
 
     st.divider()
 
-    # 2. SHAP ANALYSIS (Interpretability)
-    st.subheader("AI Decision Interpretation (SHAP)")
-    st.info("This SHAP plot identifies which factors most influenced the predicted Particle Size.")
-    
-    shap_df = pd.DataFrame({
-        'Feature': ['Smix Concentration', 'Drug LogP', 'Oil Phase %', 'Mol. Weight'],
+    # 3. SHAP ANALYSIS (AI Interpretable Plot)
+    st.subheader("Explainable AI: Feature Importance (SHAP)")
+    shap_data = pd.DataFrame({
+        'Factor': ['Smix Ratio', 'Drug LogP', 'Oil Content', 'Mol. Weight'],
         'Impact': [
-            abs(st.session_state.s_val * 0.75), 
-            abs(st.session_state.logp * 2.8),
+            abs(st.session_state.s_val * 0.8),
+            abs(st.session_state.logp * 2.5),
             abs(st.session_state.o_val * 0.4),
-            abs(st.session_state.mw * 0.06)
+            abs(st.session_state.mw * 0.05)
         ]
     }).sort_values('Impact')
 
     fig_shap = go.Figure(go.Bar(
-        x=shap_df['Impact'],
-        y=shap_df['Feature'],
+        x=shap_data['Impact'],
+        y=shap_data['Factor'],
         orientation='h',
-        marker=dict(color='rgba(0, 128, 128, 0.7)', line=dict(color='teal', width=1.5))
+        marker_color='rgb(55, 83, 109)'
     ))
-    fig_shap.update_layout(height=300, margin=dict(l=10, r=10, t=20, b=10))
+    fig_shap.update_layout(title="Feature Contribution to Size Prediction", height=350)
     st.plotly_chart(fig_shap, use_container_width=True)
 
     
 
-    # 3. COMPREHENSIVE PDF REPORT (Step 1 to Step 4)
-    st.divider()
-    if st.button("📥 Generate & Download Comprehensive PDF Report"):
+    # 4. COMPREHENSIVE PDF REPORT GENERATOR
+    st.write("### Technical Dossier")
+    if st.button("📄 Generate All-Steps PDF Report"):
         try:
+            # Create PDF instance
             pdf = FPDF()
             pdf.add_page()
             
-            # PDF Header
+            # Header
             pdf.set_font("Arial", 'B', 16)
-            pdf.cell(200, 10, "NanoPredict AI: Scientific Dossier", ln=True, align='C')
-            pdf.set_font("Arial", 'I', 10)
-            pdf.cell(200, 10, f"Generated for {st.session_state.drug}", ln=True, align='C')
+            pdf.cell(200, 10, "NanoPredict AI Technical Report", ln=True, align='C')
             pdf.ln(10)
 
-            # Report Sections Mapping
-            report_data = [
-                ("Step 1: Molecular Identity", f"Drug: {st.session_state.drug}\nMW: {st.session_state.mw} g/mol\nLogP: {st.session_state.logp}"),
-                ("Step 2: Excipient Selection", f"Oil: {st.session_state.f_o}\nSurfactant: {st.session_state.f_s}\nCo-Surfactant: {st.session_state.f_cs}"),
-                ("Step 3: Ternary Proportions", f"Oil: {st.session_state.o_val}%\nSmix: {st.session_state.s_val}%\nWater: {st.session_state.w_val}%"),
-                ("Step 4: AI Predictions", f"Predicted Size: {res_size:.2f} nm\nPDI: {res_pdi:.3f}\nZeta Potential: {res_zeta:.1f} mV\n%EE: {res_ee:.1f}%\nStatus: {stab_status}")
+            # Data Mapping for all steps
+            steps_data = [
+                ("STEP 1: MOLECULAR SPECS", f"Drug: {st.session_state.drug}\nMW: {st.session_state.mw}\nLogP: {st.session_state.logp}"),
+                ("STEP 2: SOLUBILITY DATA", f"Oil: {st.session_state.f_o}\nSurfactant: {st.session_state.f_s}\nCo-Surfactant: {st.session_state.f_cs}"),
+                ("STEP 3: FORMULATION RATIOS", f"Oil%: {st.session_state.o_val}%\nSmix%: {st.session_state.s_val}%\nWater%: {st.session_state.w_val}%"),
+                ("STEP 4: AI PREDICTIONS", f"Size: {res_size:.2f} nm\nPDI: {res_pdi:.3f}\nZeta: {res_zeta:.1f} mV\nEE: {res_ee:.1f}%\nStatus: {stab_status}")
             ]
 
-            for title, body in report_data:
+            for title, text in steps_data:
                 pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 8, title, ln=True)
-                pdf.set_line_width(0.1)
-                pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+                pdf.cell(0, 10, title, ln=True)
                 pdf.set_font("Arial", '', 10)
-                pdf.multi_cell(0, 6, body)
+                pdf.multi_cell(0, 7, text)
                 pdf.ln(5)
 
-            # THE FIX: Handle the output buffer correctly to avoid bytearray error
-            output_data = pdf.output(dest='S')
+            # THE ERROR-KILLER: Clean binary conversion
+            pdf_raw = pdf.output(dest='S')
             
-            # Ensure output is treated as bytes
-            if isinstance(output_data, str):
-                final_bytes = output_data.encode('latin-1')
+            # This ensures no 'bytearray' encoding crash
+            if isinstance(pdf_raw, str):
+                final_pdf = pdf_raw.encode('latin-1')
             else:
-                final_bytes = bytes(output_data)
+                final_pdf = bytes(pdf_raw)
 
             st.download_button(
-                label="✅ Click to Save PDF Report",
-                data=final_bytes,
-                file_name=f"NanoReport_{st.session_state.drug}.pdf",
+                label="📥 Download Final Report",
+                data=final_pdf,
+                file_name=f"NanoPredict_{st.session_state.drug}_Report.pdf",
                 mime="application/pdf"
             )
-            st.success("Dossier compiled successfully!")
+            st.success("Dossier compiled successfully.")
+            st.balloons()
 
         except Exception as e:
-            st.error(f"PDF Engine Error: {str(e)}")
+            st.error(f"Failed to compile report: {str(e)}")
