@@ -151,60 +151,80 @@ elif nav == "Step 3: Ternary":
         st.session_state.nav_index = 3
         st.rerun()
 
-# --- STEP 4: PREDICTION (RECALIBRATED DRUG-DRIVEN LOGIC & FIXED PDF) ---
+# --- STEP 4: AI PREDICTION & DYNAMIC REPORTING ---
 elif nav == "Step 4: AI Prediction":
-    st.header("Step 4: AI Final Analysis")
+    st.header(f"Step 4: AI Analysis for {st.session_state.drug}")
     
-    # Recalibrated AI logic: Values now respond to Drug LogP and Molecular Weight
-    # Higher MW generally increases particle size; higher LogP affects Zeta
-    size = (150.0 + (st.session_state.mw * 0.05)) - (st.session_state.s_val * 0.8) + (st.session_state.o_val * 0.5)
-    pdi = 0.15 + (st.session_state.o_val * 0.006) - (st.session_state.s_val * 0.001)
-    zeta = -15.0 - (st.session_state.logp * 2.5) - (len(st.session_state.f_s) * 0.2)
-    ee = 70.0 + (st.session_state.logp * 2.0) + (st.session_state.o_val * 0.1)
-    stability = 100 - (pdi * 120)
+    # Dynamic logic: Recalculate values based on drug-specific MW and LogP
+    # This ensures the output is NOT the same for every drug
+    size = (145.0 + (st.session_state.mw * 0.04)) - (st.session_state.s_val * 0.75)
+    pdi = 0.18 + (st.session_state.o_val * 0.005) - (st.session_state.s_val * 0.001)
+    zeta = -18.0 - (st.session_state.logp * 2.2) 
+    ee = 75.0 + (st.session_state.logp * 1.8)
+    stability = max(0, min(100, 100 - (pdi * 110)))
 
-    
-
-#[Image of a particle size distribution curve]
-
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Size (nm)", f"{size:.1f}"); c2.metric("PDI", f"{pdi:.3f}")
-    c3.metric("Zeta (mV)", f"{zeta:.1f}"); c4.metric("%EE", f"{ee:.1f}%")
-    c5.metric("Stability", f"{stability:.1f}%")
+    # Display Metrics
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Size (nm)", f"{size:.1f}")
+    col2.metric("PDI", f"{pdi:.3f}")
+    col3.metric("Zeta (mV)", f"{zeta:.1f}")
+    col4.metric("%EE", f"{ee:.1f}%")
+    col5.metric("Stability", f"{stability:.1f}%")
 
     st.divider()
-    st.subheader("Global Sensitivity (SHAP Influence)")
-    # SHAP chart reflecting drug-specific impact
-    shap_vals = [0.45, 0.25, 0.20, 0.10] # Smix, Oil, Drug properties, Water
-    st.bar_chart(pd.DataFrame({'Impact': shap_vals}, index=['Smix Ratio', 'Oil Conc.', 'Drug Profile', 'Water Content']))
 
-    if st.button("Finalize and Download PDF Report"):
+    # THE PDF GENERATION BUTTON
+    if st.button("🚀 Generate & Download Step-by-Step Report"):
         try:
             pdf = FPDF()
             pdf.add_page()
-            pdf.set_font("Arial", 'B', 18)
-            pdf.cell(200, 15, "NanoPredict Pro AI: Final Technical Report", ln=True, align='C')
             
-            # Structured Step-by-Step Reporting
-            steps_content = [
-                ("Step 1: Compound Profile", f"Drug Name: {st.session_state.drug}\nLogP: {st.session_state.logp}\nMW: {st.session_state.mw}"),
-                ("Step 2: Selected Excipients", f"Oil: {st.session_state.f_o}\nSurfactant: {st.session_state.f_s}\nCo-Surfactant: {st.session_state.f_cs}"),
-                ("Step 3: Formulation Design", f"Oil: {st.session_state.o_val}%\nSmix: {st.session_state.s_val}%\nWater: {st.session_state.w_val}%"),
-                ("Step 4: AI Predictions", f"Droplet Size: {size:.2f} nm\nPDI: {pdi:.3f}\nZeta Potential: {zeta:.1f} mV\nEncapsulation Efficiency: {ee:.1f}%\nStability Index: {stability:.1f}%")
-            ]
+            # Header
+            pdf.set_font("Arial", 'B', 16)
+            pdf.cell(200, 10, "NanoPredict AI: Scientific Formulation Report", ln=True, align='C')
+            pdf.ln(10)
+
+            # Step 1: Drug Info
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(200, 10, "STEP 1: MOLECULAR IDENTITY", ln=True)
+            pdf.set_font("Arial", size=10)
+            pdf.multi_cell(0, 7, f"Drug Name: {st.session_state.drug}\nMolecular Weight: {st.session_state.mw} g/mol\nLogP: {st.session_state.logp}")
             
-            for title, detail in steps_content:
-                pdf.ln(8)
-                pdf.set_font("Arial", 'B', 14)
-                pdf.cell(200, 10, title, ln=True)
-                pdf.set_font("Arial", size=11)
-                pdf.multi_cell(0, 8, detail)
+            # Step 2: Excipients
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(200, 10, "STEP 2: EXCIPIENT SELECTION", ln=True)
+            pdf.set_font("Arial", size=10)
+            pdf.multi_cell(0, 7, f"Oil Phase: {st.session_state.f_o}\nSurfactant: {st.session_state.f_s}\nCo-Surfactant: {st.session_state.f_cs}")
             
-            # Robust PDF download for Streamlit
-            pdf_data = pdf.output(dest='S').encode('latin-1')
-            st.download_button(label="📥 Download Full Scientific Report", data=pdf_data, 
-                               file_name=f"{st.session_state.drug}_NanoReport.pdf", mime="application/pdf")
+            # Step 3: Proportions
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(200, 10, "STEP 3: TERNARY DESIGN", ln=True)
+            pdf.set_font("Arial", size=10)
+            pdf.multi_cell(0, 7, f"Oil: {st.session_state.o_val}%\nSmix (S/CoS): {st.session_state.s_val}%\nWater: {st.session_state.w_val}%")
+            
+            # Step 4: AI Predictions
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(200, 10, "STEP 4: AI PREDICTED CHARACTERISTICS", ln=True)
+            pdf.set_font("Arial", size=10)
+            pdf.multi_cell(0, 7, f"Predicted Droplet Size: {size:.2f} nm\nPolydispersity Index (PDI): {pdi:.3f}\nZeta Potential: {zeta:.2f} mV\nEncapsulation Efficiency: {ee:.2f}%\nStability Index: {stability:.2f}%")
+
+            # Final Output - FIXED LOGIC
+            # Use 'dest=S' and output as bytes without extra encoding
+            report_bytes = pdf.output(dest='S')
+            if isinstance(report_bytes, str):
+                report_bytes = report_bytes.encode('latin-1')
+
+            st.download_button(
+                label="📥 Click here to Download PDF",
+                data=report_bytes,
+                file_name=f"NanoReport_{st.session_state.drug}.pdf",
+                mime="application/pdf"
+            )
+            st.success("Report generated successfully!")
             st.balloons()
+
         except Exception as e:
-            st.error(f"PDF Generation failed: {e}")
+            st.error(f"Failed to generate PDF: {str(e)}")
