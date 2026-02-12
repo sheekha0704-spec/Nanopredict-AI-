@@ -8,3 +8,4 @@ pubchempy
 rdkit
 fpdf2
 kaleido
+scikit-learn
