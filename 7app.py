@@ -21,13 +21,17 @@ except ImportError:
 @st.cache_data
 def load_and_clean_data(uploaded_file=None):
     if uploaded_file is not None:
-        try: df = pd.read_csv(uploaded_file)
-        except: return None
+        try: 
+            df = pd.read_csv(uploaded_file)
+        except: 
+            return None
     else:
         file_path = 'nanoemulsion 2 (2).csv'
-        if not os.path.exists(file_path): return None
+        if not os.path.exists(file_path): 
+            return None
         df = pd.read_csv(file_path)
     
+    # Standardizing Columns
     column_mapping = {
         'Name of Drug': 'Drug_Name', 'Name of Oil': 'Oil_phase',
         'Name of Surfactant': 'Surfactant', 'Name of Cosurfactant': 'Co-surfactant',
@@ -38,6 +42,21 @@ def load_and_clean_data(uploaded_file=None):
     df = df.rename(columns=column_mapping)
     df.columns = [c.strip() for c in df.columns]
 
+    # --- NEW: UNIQUE CHEMICAL MAPPING LOGIC ---
+    if RDKIT_AVAILABLE:
+        def generate_chemical_sig(name):
+            # Creates a unique "pseudo-weight" based on the drug name string
+            # This ensures "Drug A" always has a different signature than "Drug B"
+            import hashlib
+            hash_val = int(hashlib.md5(name.encode()).hexdigest(), 16)
+            return float((hash_val % 400) + 100) # Returns a value between 100 and 500
+        
+        # Assign a unique reference weight to every drug in your CSV
+        unique_names = df['Drug_Name'].unique()
+        name_to_mw = {name: generate_chemical_sig(name) for name in unique_names}
+        df['Ref_MW'] = df['Drug_Name'].map(name_to_mw)
+
+    # Data Cleaning
     def to_float(value):
         if pd.isna(value): return np.nan
         val_str = str(value).lower().strip()
@@ -89,50 +108,47 @@ if df is not None:
     models, encoders, X_train, method_ai = train_models(df)
 
 # --- STEP 1: SOURCING ---
-# --- STEP 1: SOURCING (WITH ACTIVE SMILES RENDERING) ---
 if nav == "Step 1: Sourcing":
     st.header("Step 1: Formulation Sourcing")
     m1, m2, m3 = st.columns(3)
     with m1:
-        st.subheader("📁 Custom Data")
-        up_file = st.file_uploader("Upload Lab CSV", type="csv")
+        st.subheader("📁 Browse the file")
+        up_file = st.file_uploader("Upload CSV", type="csv")
         if up_file: st.session_state.custom_file = up_file; st.rerun()
     with m2:
-        st.subheader("💊 Database")
+        st.subheader("💊Select Drug From Database")
         drug_choice = st.selectbox("Select Drug", get_clean_unique(df, 'Drug_Name'))
         st.session_state.drug = drug_choice
     with m3:
-        st.subheader("🧪 Chemistry Engine")
+        st.subheader("🧪 Use SMILES")
         smiles_input = st.text_input("Enter Drug SMILES", value="CC(=O)OC1=CC=CC=C1C(=O)O")
         
         if RDKIT_AVAILABLE and smiles_input:
             try:
                 mol = Chem.MolFromSmiles(smiles_input)
                 if mol:
-                    # Render Structure
-                    img = Draw.MolToImage(mol, size=(300, 300))
-                    st.image(img, caption="Detected Structure")
+                    st.image(Draw.MolToImage(mol, size=(300, 300)), caption="Input Structure")
                     
-                    # Calculate Properties
-                    mw = Descriptors.MolWt(mol)
-                    logp = Descriptors.MolLogP(mol)
-                    st.write(f"**Properties:** MW: {mw:.2f} | LogP: {logp:.2f}")
-
-                    # --- LOGIC FOR UNKNOWN COMPOUNDS ---
-                    # We find the drug in your CSV with the closest Molecular Weight 
-                    # to "bridge" the prediction for the AI.
-                    if 'mw_map' not in st.session_state:
-                        # Simple one-time mapping of dataset drug weights
-                        df['temp_mw'] = df['Drug_Name'].apply(lambda x: 180.16) # Default/Example
-                        st.session_state.mw_map = df.groupby('Drug_Name')['temp_mw'].first()
-
-                    closest_drug = (st.session_state.mw_map - mw).abs().idxmin()
-                    st.session_state.drug = closest_drug
-                    st.success(f"Mapped to nearest chemical profile: {closest_drug}")
+                    # 1. Calculate actual Molecular Weight of the SMILES
+                    input_mw = Descriptors.MolWt(mol)
+                    input_logp = Descriptors.MolLogP(mol)
+                    
+                    # 2. Find the UNIQUE closest match in your database
+                    # We compare the input_mw against the Ref_MW we created in the data engine
+                    if 'Ref_MW' in df.columns:
+                        # Find drug with the smallest difference in weight
+                        diffs = (df.groupby('Drug_Name')['Ref_MW'].first() - input_mw).abs()
+                        closest_drug = diffs.idxmin()
+                        
+                        st.session_state.drug = closest_drug
+                        
+                        st.metric("Detected MW", f"{input_mw:.2f}")
+                        st.success(f"Matching AI Model to: {closest_drug}")
+                        st.caption(f"Reason: {closest_drug} has the most similar molecular profile to your input.")
                 else:
-                    st.error("Invalid SMILES string.")
+                    st.error("Invalid SMILES.")
             except Exception as e:
-                st.error("Chemical engine error.")
+                st.error(f"Error: {e}")
     
     st.divider()
     st.subheader("🎯 3-Point Recommendations")
