@@ -14,21 +14,6 @@ if 'nav_index' not in st.session_state:
 
 # --- MODEL LOADING ENGINE ---
 @st.cache_resource
-def load_nano_models():
-    try:
-        # Replace these filenames with your actual .joblib or .pkl files
-        models = {
-            'Size_nm': joblib.load('model_size.joblib'),
-            'PDI': joblib.load('model_pdi.joblib'),
-            'Zeta_mV': joblib.load('model_zeta.joblib'),
-            'Encapsulation_Efficiency': joblib.load('model_ee.joblib')
-        }
-        # Load your training feature matrix for SHAP (if available)
-        # X_train = joblib.load('X_train.joblib') 
-        return models #, X_train
-    except Exception as e:
-        st.error(f"Could not load models: {e}")
-        return None
 
 # Initialize models
 loaded_models = load_nano_models()
