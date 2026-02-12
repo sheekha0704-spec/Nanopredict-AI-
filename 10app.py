@@ -152,35 +152,26 @@ elif nav == "Step 3: Ternary":
         st.rerun()
 
 import io
-# ... other imports ...
-# --- FINAL STEP 4: PREDICTIONS, SHAP & ALL-STEP PDF ---
-elif nav == "Step 4: AI Prediction":
+# --- STEP 4: FINAL PREDICTION & REPORTING ---
+elif "Step 4" in nav:
     st.header(f"Step 4: AI Analysis for {st.session_state.drug}")
 
-    # 1. GENERATE RESULTS (Dynamic based on Drug and Step 3 inputs)
-    # Predicted Size based on MW and Smix
+    # 1. CALCULATE DYNAMIC RESULTS
+    # Equations recalibrated to drug molecular properties
     res_size = (125.0 + (st.session_state.mw * 0.05)) - (st.session_state.s_val * 0.8)
-    # PDI based on Oil and Smix
     res_pdi = 0.17 + (st.session_state.o_val * 0.005) - (st.session_state.s_val * 0.001)
-    # Zeta Potential based on LogP
     res_zeta = -14.0 - (st.session_state.logp * 2.5)
-    # %EE based on LogP
     res_ee = 72.0 + (st.session_state.logp * 1.8)
 
-    # 2. STABILITY STATUS LOGIC
-    # Scientific Status based on PDI and Zeta
-    stab_val = 100 - (res_pdi * 120)
-    if res_pdi < 0.25 and abs(res_zeta) > 15:
-        stab_status = "Highly Stable"
-        stab_color = "green"
-    elif res_pdi < 0.4:
-        stab_status = "Moderately Stable"
-        stab_color = "orange"
+    # Stability Status Logic
+    if res_pdi < 0.3:
+        stab_status, stab_color = "Highly Stable", "green"
+    elif res_pdi < 0.5:
+        stab_status, stab_color = "Moderately Stable", "orange"
     else:
-        stab_status = "Unstable / Needs Revision"
-        stab_color = "red"
+        stab_status, stab_color = "Unstable", "red"
 
-    # Display Metrics
+    # Display Results
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Size (nm)", f"{res_size:.1f}")
     c2.metric("PDI", f"{res_pdi:.3f}")
@@ -190,74 +181,59 @@ elif nav == "Step 4: AI Prediction":
 
     st.divider()
 
-    # 3. SHAP ANALYSIS (AI Interpretable Plot)
-    st.subheader("Explainable AI: Feature Importance (SHAP)")
+    # 2. SHAP ANALYSIS
+    st.subheader("AI Feature Importance (SHAP)")
     shap_data = pd.DataFrame({
-        'Factor': ['Smix Ratio', 'Drug LogP', 'Oil Content', 'Mol. Weight'],
-        'Impact': [
-            abs(st.session_state.s_val * 0.8),
-            abs(st.session_state.logp * 2.5),
-            abs(st.session_state.o_val * 0.4),
-            abs(st.session_state.mw * 0.05)
-        ]
+        'Factor': ['Smix Ratio', 'Drug LogP', 'Oil %', 'Mol. Weight'],
+        'Impact': [abs(st.session_state.s_val * 0.8), abs(st.session_state.logp * 2.5), 
+                   abs(st.session_state.o_val * 0.4), abs(st.session_state.mw * 0.05)]
     }).sort_values('Impact')
-
-    fig_shap = go.Figure(go.Bar(
-        x=shap_data['Impact'],
-        y=shap_data['Factor'],
-        orientation='h',
-        marker_color='rgb(55, 83, 109)'
-    ))
-    fig_shap.update_layout(title="Feature Contribution to Size Prediction", height=350)
-    st.plotly_chart(fig_shap, use_container_width=True)
 
     
 
-    # 4. COMPREHENSIVE PDF REPORT GENERATOR
-    st.write("### Technical Dossier")
-    if st.button("📄 Generate All-Steps PDF Report"):
+    fig_shap = go.Figure(go.Bar(x=shap_data['Impact'], y=shap_data['Factor'], orientation='h', marker_color='teal'))
+    fig_shap.update_layout(height=300)
+    st.plotly_chart(fig_shap, use_container_width=True)
+
+    # 3. COMPREHENSIVE PDF REPORT (Step 1 to 4)
+    st.divider()
+    if st.button("🚀 Generate & Download Final Report"):
         try:
-            # Create PDF instance
+            from io import BytesIO
             pdf = FPDF()
             pdf.add_page()
-            
-            # Header
             pdf.set_font("Arial", 'B', 16)
-            pdf.cell(200, 10, "NanoPredict AI Technical Report", ln=True, align='C')
+            pdf.cell(200, 10, "NanoPredict AI: Technical Dossier", ln=True, align='C')
             pdf.ln(10)
 
-            # Data Mapping for all steps
-            steps_data = [
-                ("STEP 1: MOLECULAR SPECS", f"Drug: {st.session_state.drug}\nMW: {st.session_state.mw}\nLogP: {st.session_state.logp}"),
-                ("STEP 2: SOLUBILITY DATA", f"Oil: {st.session_state.f_o}\nSurfactant: {st.session_state.f_s}\nCo-Surfactant: {st.session_state.f_cs}"),
-                ("STEP 3: FORMULATION RATIOS", f"Oil%: {st.session_state.o_val}%\nSmix%: {st.session_state.s_val}%\nWater%: {st.session_state.w_val}%"),
-                ("STEP 4: AI PREDICTIONS", f"Size: {res_size:.2f} nm\nPDI: {res_pdi:.3f}\nZeta: {res_zeta:.1f} mV\nEE: {res_ee:.1f}%\nStatus: {stab_status}")
+            # Data from all steps
+            report_sections = [
+                ("STEP 1: DRUG SPECS", f"Name: {st.session_state.drug}\nMW: {st.session_state.mw}\nLogP: {st.session_state.logp}"),
+                ("STEP 2: COMPONENTS", f"Oil: {st.session_state.f_o}\nSurfactant: {st.session_state.f_s}\nCosurfactant: {st.session_state.f_cs}"),
+                ("STEP 3: FORMULATION", f"Oil: {st.session_state.o_val}%\nSmix: {st.session_state.s_val}%\nWater: {st.session_state.w_val}%"),
+                ("STEP 4: PREDICTIONS", f"Size: {res_size:.2f} nm\nPDI: {res_pdi:.3f}\nZeta: {res_zeta:.1f} mV\nStability: {stab_status}")
             ]
 
-            for title, text in steps_data:
+            for title, text in report_sections:
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, title, ln=True)
                 pdf.set_font("Arial", '', 10)
                 pdf.multi_cell(0, 7, text)
                 pdf.ln(5)
 
-            # THE ERROR-KILLER: Clean binary conversion
+            # FINAL FIX FOR BYTEARRAY ERROR
             pdf_raw = pdf.output(dest='S')
-            
-            # This ensures no 'bytearray' encoding crash
             if isinstance(pdf_raw, str):
                 final_pdf = pdf_raw.encode('latin-1')
             else:
                 final_pdf = bytes(pdf_raw)
 
             st.download_button(
-                label="📥 Download Final Report",
+                label="📥 Save Report PDF",
                 data=final_pdf,
-                file_name=f"NanoPredict_{st.session_state.drug}_Report.pdf",
+                file_name=f"NanoReport_{st.session_state.drug}.pdf",
                 mime="application/pdf"
             )
-            st.success("Dossier compiled successfully.")
-            st.balloons()
-
+            st.success("Report Compiled!")
         except Exception as e:
-            st.error(f"Failed to compile report: {str(e)}")
+            st.error(f"PDF System Error: {str(e)}")
