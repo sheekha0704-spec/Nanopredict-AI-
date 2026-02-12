@@ -103,8 +103,6 @@ if nav == "Step 1: Sourcing":
         st.session_state.drug = drug_choice
     with m3:
         st.subheader("🧪 Chemistry Engine")
-      with m3:
-        st.subheader("🧪 Chemistry Engine")
         smiles_input = st.text_input("Enter Drug SMILES", value="CC(=O)OC1=CC=CC=C1C(=O)O")
         
         if RDKIT_AVAILABLE and smiles_input:
