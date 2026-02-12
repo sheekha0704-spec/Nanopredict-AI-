@@ -1,11 +1,9 @@
 streamlit
 pandas
 numpy
-plotly
+plotly>=6.0.0
 scikit-learn
 matplotlib
 shap
-rdkit
-pillow
 fpdf
-kaleido==0.1.0post1
+kaleido>=0.2.1
