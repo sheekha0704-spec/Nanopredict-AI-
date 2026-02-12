@@ -182,107 +182,151 @@ elif nav == "Step 3: Ternary":
         st.plotly_chart(fig, use_container_width=True)
     if st.button("Next: AI Prediction ➡️"): st.session_state.nav_index = 3; st.rerun()
 
-# --- STEP 4: PREDICTION & PDF (WITH COMPOSITION PARAMETERS) ---
+# --- STEP 4: PREDICTION (WITH FULL PDF REPORT) ---
 elif nav == "Step 4: AI Prediction":
-    st.header("Step 4: AI Prediction & Report")
+    st.header(f"4. AI Prediction for {st.session_state.get('drug', 'Drug')}")
     try:
+        from fpdf import FPDF
+        import tempfile
+        import io
+
         def s_enc(col, val): 
             return encoders[col].transform([val])[0] if val in encoders[col].classes_ else 0
         
-        # Prepare input for models
         in_d = pd.DataFrame([{
             'Drug_Name': s_enc('Drug_Name', st.session_state.drug), 
             'Oil_phase': s_enc('Oil_phase', st.session_state.f_o), 
             'Surfactant': s_enc('Surfactant', st.session_state.f_s), 
-            'Co-surfactant': s_enc('Co-surfactant', st.session_state.f_cs)
+            'Co-surfactant': s_enc('Co-surfactant', str(st.session_state.f_cs))
         }])
         
-        # Run predictions
-        preds = {t: models[t].predict(in_d)[0] for t in models}
-        # Numeric Stability Calculation
-        stab = min(100, (min(abs(preds['Zeta_mV']), 30)/30*70) + (max(0, 0.5-preds['PDI'])/0.5*30))
-
-        # UI Display of Metrics
+        res = {t: models[t].predict(in_d)[0] for t in models}
+        stab = min(100, max(0, (min(abs(res['Zeta_mV']), 30)/30*70) + (max(0, 0.5-res['PDI'])/0.5*30)))
+        
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Size", f"{preds['Size_nm']:.2f} nm")
-        c2.metric("PDI", f"{preds['PDI']:.3f}")
-        c3.metric("Zeta", f"{preds['Zeta_mV']:.2f} mV")
-        c4.metric("%EE", f"{preds['Encapsulation_Efficiency']:.2f}%")
-        c5.metric("Stability", f"{stab:.1f}%")
+        c1.metric("Size", f"{res['Size_nm']:.2f} nm")
+        c2.metric("PDI", f"{res['PDI']:.3f}")
+        c3.metric("Zeta", f"{res['Zeta_mV']:.2f} mV")
+        c4.metric("%EE", f"{res['Encapsulation_Efficiency']:.2f}%")
+        c5.metric("Stability Score", f"{stab:.1f}%")
         
         st.divider()
-        
-        # Generate SHAP Plot
-        fig_sh, ax = plt.subplots(figsize=(10, 4))
+        cg, ct = st.columns([1.5, 1])
         explainer = shap.Explainer(models['Size_nm'], X_train)
-        shap_values = explainer(in_d)
-        shap.plots.waterfall(shap_values[0], show=False)
+        sv = explainer(in_d)
+        
+        # Display Plot in UI
+        fig_sh, ax = plt.subplots(figsize=(10, 4))
+        shap.plots.waterfall(sv[0], show=False)
         st.pyplot(fig_sh)
+            
+        with ct:
+            driver_name = ['Drug', 'Oil', 'Surfactant', 'Co-surfactant'][np.argmax(np.abs(sv.values[0]))]
+            verdict = 'stable' if stab > 70 else 'moderate'
+            st.info("### AI Interpretation")
+            st.write(f"**Primary Driver:** {driver_name}")
+            st.write(f"**Stability Verdict:** {verdict.capitalize()} profile.")
 
-        if st.button("Generate Submission Report"):
+        # --- COMPREHENSIVE PDF GENERATION ---
+        def create_full_pdf(shap_fig):
             pdf = FPDF()
             pdf.add_page()
             
-            # 1. Report Header
+            # Header
             pdf.set_font("Arial", 'B', 16)
             pdf.cell(200, 10, "NanoPredict Pro: Final Submission Report", ln=True, align='C')
-            pdf.line(10, 25, 200, 25)
+            pdf.set_font("Arial", 'I', 10)
+            pdf.cell(200, 10, f"Generated for: {st.session_state.drug}", ln=True, align='C')
+            pdf.line(10, 30, 200, 30)
             pdf.ln(10)
 
-            # 2. Composition Parameters (ADDED AS REQUESTED)
+            # --- ADDED: COMPOSITION ANALYSIS SECTION ---
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(200, 10, "1. Formulation Composition Analysis", ln=True)
             pdf.set_font("Arial", '', 11)
             
-            o_perc = st.session_state.get('oil_v', 15)
-            s_perc = st.session_state.get('smix_v', 45)
-            w_perc = 100 - o_perc - s_perc
+            # Retrieve values from session state sliders
+            o_v = st.session_state.get('oil_v', 15)
+            s_v = st.session_state.get('smix_v', 45)
+            w_v = 100 - o_v - s_v
             
-            pdf.cell(0, 8, f"- Oil Phase ({st.session_state.f_o}): {o_perc}%", ln=True)
-            pdf.cell(0, 8, f"- Smix ({st.session_state.f_s} + {st.session_state.f_cs}): {s_perc}%", ln=True)
-            pdf.cell(0, 8, f"- Water Content: {w_perc}%", ln=True)
+            pdf.cell(0, 8, f"- Oil Phase Concentration: {o_v}%", ln=True)
+            pdf.cell(0, 8, f"- Smix (Surfactant/Co-surfactant) Concentration: {s_v}%", ln=True)
+            pdf.cell(0, 8, f"- Water Content: {w_v}%", ln=True)
+            pdf.ln(5)
+            
+            # STEP 1 & 2 SUMMARY
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(200, 10, "2. Material Selection & Solubility", ln=True)
+            pdf.set_font("Arial", '', 11)
+            pdf.cell(0, 8, f"Selected Drug: {st.session_state.drug}", ln=True)
+            pdf.cell(0, 8, f"Selected Oil Phase: {st.session_state.f_o}", ln=True)
+            pdf.cell(0, 8, f"Selected Surfactant: {st.session_state.f_s}", ln=True)
+            pdf.cell(0, 8, f"Selected Co-Surfactant: {st.session_state.f_cs}", ln=True)
             pdf.ln(5)
 
-            # 3. Ternary Phase Diagram
+            # STEP 3 TERNARY DATA & IMAGE
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "2. Ternary Phase Mapping", ln=True)
+            pdf.cell(200, 10, "3. Ternary Phase Analysis", ln=True)
             
+            # Recreate Ternary Diagram for PDF
             fig_tern = go.Figure(go.Scatterternary(
-                a=[o_perc], b=[s_perc], c=[w_perc], 
-                marker=dict(color='red', size=15, symbol='diamond')
+                a=[o_v], b=[s_v], c=[w_v], 
+                marker=dict(color='red', size=12, symbol='diamond')
             ))
-            fig_tern.update_layout(ternary=dict(sum=100, aaxis_title='Oil', baxis_title='Smix', caxis_title='Water'))
-            
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_t:
-                fig_tern.write_image(tmp_t.name, engine="kaleido")
-                pdf.image(tmp_t.name, x=50, w=110)
-            
-            # 4. AI Predictions Table
-            pdf.ln(5)
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "3. Predicted Physical Characteristics", ln=True)
-            pdf.set_font("Arial", '', 10)
-            pdf.cell(80, 8, "Droplet Size", 1); pdf.cell(80, 8, f"{preds['Size_nm']:.2f} nm", 1, ln=True)
-            pdf.cell(80, 8, "Polydispersity Index (PDI)", 1); pdf.cell(80, 8, f"{preds['PDI']:.3f}", 1, ln=True)
-            pdf.cell(80, 8, "Zeta Potential", 1); pdf.cell(80, 8, f"{preds['Zeta_mV']:.2f} mV", 1, ln=True)
-            pdf.cell(80, 8, "Final Stability Score", 1); pdf.cell(80, 8, f"{stab:.1f}%", 1, ln=True)
-            
-            # 5. Driver Analysis Image
-            pdf.ln(5)
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "4. Factor Influence Analysis (SHAP)", ln=True)
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_s:
-                fig_sh.savefig(tmp_s.name, bbox_inches='tight')
-                pdf.image(tmp_s.name, x=10, w=180)
+            fig_tern.update_layout(ternary=dict(sum=100, aaxis_title='Oil', baxis_title='Smix', caxis_title='Water'), showlegend=False)
 
-            # Final Output
-            st.download_button(
-                label="📥 Download Submission PDF", 
-                data=pdf.output(dest='S').encode('latin-1'), 
-                file_name=f"Report_{st.session_state.drug}.pdf", 
-                mime="application/pdf"
-            )
+            # Use tempfile to save and embed Ternary Image
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_tern:
+                # Use kaleido for export (Ensure requirements.txt has kaleido==0.1.0post1)
+                fig_tern.write_image(tmp_tern.name, engine="kaleido")
+                pdf.image(tmp_tern.name, x=50, w=110)
+            pdf.ln(5)
+
+            # STEP 4 PREDICTIONS TABLE
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(200, 10, "4. AI Prediction Results", ln=True)
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(80, 8, "Parameter", border=1, align='C')
+            pdf.cell(80, 8, "Predicted Value", border=1, ln=True, align='C')
             
-    except Exception as e:
-        st.error(f"Error in Step 4: {e}")
-        
+            pdf.set_font("Arial", '', 10)
+            results = [
+                ("Droplet Size", f"{res['Size_nm']:.2f} nm"),
+                ("PDI", f"{res['PDI']:.3f}"),
+                ("Zeta Potential", f"{res['Zeta_mV']:.2f} mV"),
+                ("Encapsulation Efficiency", f"{res['Encapsulation_Efficiency']:.2f}%"),
+                ("Stability Score", f"{stab:.1f}%")
+            ]
+            for p, v in results:
+                pdf.cell(80, 8, p, border=1)
+                pdf.cell(80, 8, v, border=1, ln=True)
+            
+            pdf.ln(10)
+            
+            # SHAP WATERFALL IMAGE
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(200, 10, "5. Formulation Driver Analysis (SHAP Waterfall)", ln=True)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                shap_fig.savefig(tmp.name, format='png', bbox_inches='tight')
+                pdf.image(tmp.name, x=15, w=170)
+            
+            pdf.set_y(-20)
+            pdf.set_font("Arial", 'I', 8)
+            pdf.cell(0, 10, "Report generated via NanoPredict Pro - Proprietary AI Formulation Engine", align='C')
+            
+            return pdf.output(dest='S').encode('latin-1')
+
+        st.divider()
+        if st.button("Generate Complete Submission Report"):
+            with st.spinner("Compiling all steps and diagrams into PDF..."):
+                final_pdf = create_full_pdf(fig_sh)
+                st.download_button(
+                    label="📥 Download Submission PDF",
+                    data=final_pdf,
+                    file_name=f"Full_Report_{st.session_state.drug}.pdf",
+                    mime="application/pdf"
+                )
+
+    except Exception as e: 
+        st.error(f"Error compiling report: {e}")
