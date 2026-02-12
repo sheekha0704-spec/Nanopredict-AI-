@@ -14,28 +14,48 @@ from rdkit.Chem import Descriptors, Draw
 
 # --- 1. DATA ENGINE ---
 @st.cache_data
-def load_and_clean_data():
-    file_path = 'nanoemulsion 2 (2).csv'
+def load_and_clean_data(uploaded_file=None):
+    df = None
+    # 1. Load file with flexible encoding
     try:
-        df = pd.read_csv(file_path, encoding='latin1')
-    except:
-        # Create a dummy dataframe if file is missing for demonstration
-        df = pd.DataFrame(columns=['Drug_Name', 'Oil_phase', 'Surfactant', 'Co-surfactant', 'Size_nm', 'PDI', 'Zeta_mV', 'Encapsulation_Efficiency'])
-    
-    # Standardize and Remove Duplicates
-    df.columns = [c.strip() for c in df.columns]
-    df = df.drop_duplicates()
-    
-    # Numeric Cleaning
-    def clean_num(x):
-        if isinstance(x, str):
-            nums = re.findall(r"[-+]?\d*\.\d+|\d+", x)
-            return float(nums[0]) if nums else 0.0
-        return x if pd.notnull(x) else 0.0
+        if uploaded_file is not None:
+            df = pd.read_csv(uploaded_file, encoding='latin1')
+        else:
+            df = pd.read_csv('nanoemulsion 2 (2).csv', encoding='latin1')
+    except Exception as e:
+        st.error(f"File loading failed: {e}")
+        return None
 
-    targets = ['Size_nm', 'PDI', 'Zeta_mV', 'Encapsulation_Efficiency']
-    for t in [col for col in targets if col in df.columns]:
-        df[t] = df[t].apply(clean_num)
+    # 2. Clean column names (Remove hidden spaces/newlines)
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # 3. Dynamic Mapping: Match your CSV headers to the code's expected names
+    # Add any variations you see in your Excel/CSV file to these lists
+    mapping = {
+        'Drug_Name': ['Name of Drug', 'Drug', 'Drug Name', 'Drug_Name'],
+        'Oil_phase': ['Name of Oil', 'Oil', 'Oil Phase', 'Oil_phase'],
+        'Surfactant': ['Name of Surfactant', 'Surfactant', 'Surfactant_Name'],
+        'Co-surfactant': ['Name of Cosurfactant', 'Co-surfactant', 'Co surfactant', 'Cosurfactant']
+    }
+
+    new_cols = {}
+    for standard_name, possible_names in mapping.items():
+        for p in possible_names:
+            if p in df.columns:
+                new_cols[p] = standard_name
+                break # Move to next standard name once found
+    
+    df = df.rename(columns=new_cols)
+
+    # 4. Final Safety Check: If columns are still missing, create them as empty
+    required = ['Drug_Name', 'Oil_phase', 'Surfactant', 'Co-surfactant']
+    for col in required:
+        if col not in df.columns:
+            st.warning(f"Column '{col}' not detected. Creating placeholder.")
+            df[col] = "Unknown"
+
+    # 5. Remove exact duplicates for clean lists
+    df = df.drop_duplicates().reset_index(drop=True)
     
     return df
 
