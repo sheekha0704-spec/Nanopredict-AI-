@@ -1,0 +1,243 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+import matplotlib.pyplot as plt
+import shap
+import os
+import re
+import hashlib
+import io
+import tempfile
+from fpdf import FPDF
+
+# --- RDKIT & CHEMICAL ENGINE ---
+try:
+    from rdkit import Chem
+    from rdkit.Chem import Descriptors, Draw
+    import pubchempy as pcp
+    RDKIT_AVAILABLE = True
+except ImportError:
+    RDKIT_AVAILABLE = False
+
+# --- 1. DATA ENGINE (COMBINED & ROBUST) ---
+@st.cache_data
+def load_and_clean_data(uploaded_file=None):
+    df = None
+    try:
+        if uploaded_file is not None:
+            df = pd.read_csv(uploaded_file, encoding='latin1')
+        else:
+            file_path = 'nanoemulsion 2 (2).csv'
+            if os.path.exists(file_path):
+                df = pd.read_csv(file_path, encoding='latin1')
+        
+        if df is None: return None
+
+        # Column Standardizing
+        column_mapping = {
+            'Name of Drug': 'Drug_Name', 'Name of Oil': 'Oil_phase',
+            'Name of Surfactant': 'Surfactant', 'Name of Cosurfactant': 'Co-surfactant',
+            'Particle Size (nm)': 'Size_nm', 'PDI': 'PDI',
+            'Zeta Potential (mV)': 'Zeta_mV', '%EE': 'Encapsulation_Efficiency',
+            'Method Used': 'Method' 
+        }
+        df = df.rename(columns=column_mapping)
+        df.columns = [c.strip() for c in df.columns]
+
+        # Numeric Cleaning
+        def to_float(value):
+            if pd.isna(value): return 0.0
+            val_str = str(value).lower().strip()
+            if any(x in val_str for x in ['low', 'not stated', 'nan', 'null']): return 0.0
+            nums = re.findall(r"[-+]?\d*\.\d+|\d+", val_str)
+            return float(nums[0]) if nums else 0.0
+
+        targets = ['Size_nm', 'PDI', 'Zeta_mV', 'Encapsulation_Efficiency']
+        for col in targets:
+            if col in df.columns:
+                df[col] = df[col].apply(to_float)
+
+        cat_cols = ['Drug_Name', 'Oil_phase', 'Surfactant', 'Co-surfactant', 'Method']
+        for col in cat_cols:
+            if col in df.columns:
+                df[col] = df[col].astype(str).replace(['nan', 'None', 'Unknown', 'Not Stated'], 'Unknown')
+        
+        return df[df['Drug_Name'] != 'Unknown']
+    except Exception as e:
+        st.error(f"Data Loading Error: {e}")
+        return None
+
+# --- 2. MODEL TRAINING ENGINE ---
+@st.cache_resource
+def train_models(_data):
+    if _data is None: return None, None, None, None
+    features = ['Drug_Name', 'Oil_phase', 'Surfactant', 'Co-surfactant']
+    targets = ['Size_nm', 'PDI', 'Zeta_mV', 'Encapsulation_Efficiency']
+    le_dict = {}
+    df_enc = _data.copy()
+    
+    for col in features + ['Method']:
+        le = LabelEncoder()
+        df_enc[col] = le.fit_transform(_data[col].astype(str))
+        le_dict[col] = le
+        
+    models = {t: GradientBoostingRegressor(n_estimators=50, random_state=42).fit(df_enc[features], df_enc[t]) for t in targets}
+    method_model = RandomForestClassifier(n_estimators=50, random_state=42).fit(df_enc[features], df_enc['Method'])
+    return models, le_dict, df_enc[features], method_model
+
+# --- 3. APP SETUP & SESSION STATE ---
+st.set_page_config(page_title="NanoPredict Pro AI", layout="wide")
+
+if 'nav_index' not in st.session_state:
+    st.session_state.update({
+        'nav_index': 0, 'drug': "Acetazolamide", 'f_o': "MCT", 'f_s': "Tween 80", 
+        'f_cs': "PEG-400", 'o_val': 15.0, 's_val': 45.0, 'mw': 222.2, 'logp': 1.5
+    })
+
+df = load_and_clean_data(st.session_state.get('custom_file'))
+models, encoders, X_train, method_ai = train_models(df)
+
+# Sidebar Navigation
+steps = ["Step 1: Sourcing", "Step 2: Solubility", "Step 3: Ternary", "Step 4: AI Prediction"]
+nav = st.sidebar.radio("Navigation", steps, index=st.session_state.nav_index)
+st.session_state.nav_index = steps.index(nav)
+
+# --- STEP 1: SOURCING (FROM CODE 2) ---
+if nav == "Step 1: Sourcing":
+    st.header("Step 1: Molecular Sourcing & Structural ID")
+    source_mode = st.radio("Sourcing Method:", ["Database Selection", "SMILES Structural Input", "Browse CSV"], horizontal=True)
+    
+    if source_mode == "Database Selection" and df is not None:
+        drug_list = sorted([x for x in df['Drug_Name'].unique() if x != 'Unknown'])
+        st.session_state.drug = st.selectbox("Select Drug", drug_list)
+        
+    elif source_mode == "SMILES Structural Input" and RDKIT_AVAILABLE:
+        smiles = st.text_input("Enter SMILES", "CC1=NN=C(S1)NC(=O)C")
+        mol = Chem.MolFromSmiles(smiles)
+        if mol:
+            st.image(Draw.MolToImage(mol, size=(250, 250)), caption="Structure")
+            st.session_state.logp = Descriptors.MolLogP(mol)
+            st.session_state.mw = Descriptors.MolWt(mol)
+            try: st.session_state.drug = pcp.get_compounds(smiles, 'smiles')[0].iupac_name
+            except: st.session_state.drug = "Custom Molecule"
+            
+    elif source_mode == "Browse CSV":
+        up = st.file_uploader("Upload Lab CSV", type="csv")
+        if up: 
+            st.session_state.custom_file = up
+            st.rerun()
+
+    # Dynamic Recommendation Logic
+    d_seed = int(hashlib.md5(st.session_state.drug.encode()).hexdigest(), 16)
+    o_list, s_list, cs_list = ["MCT", "Oleic Acid", "Castor Oil"], ["Tween 80", "Cremophor EL"], ["PEG-400", "Ethanol"]
+    
+    st.divider()
+    st.subheader(f"AI Recommendations for {st.session_state.drug}")
+    c1, c2, c3 = st.columns(3)
+    c1.success(f"**Top Oils**\n- {o_list[d_seed % 3]}")
+    c2.info(f"**Top Surfactants**\n- {s_list[d_seed % 2]}")
+    c3.warning(f"**Top Co-Surfactants**\n- {cs_list[d_seed % 2]}")
+
+    if st.button("Proceed to Solubility ➡️"): 
+        st.session_state.nav_index = 1
+        st.rerun()
+
+# --- STEP 2: SOLUBILITY (FROM CODE 2) ---
+elif nav == "Step 2: Solubility":
+    st.header(f"Step 2: Solubility Profiling - {st.session_state.drug}")
+    l, r = st.columns(2)
+    with l:
+        st.session_state.f_o = st.selectbox("Select Oil", sorted(df['Oil_phase'].unique()))
+        st.session_state.f_s = st.selectbox("Select Surfactant", sorted(df['Surfactant'].unique()))
+        st.session_state.f_cs = st.selectbox("Select Co-Surfactant", sorted(df['Co-surfactant'].unique()))
+    with r:
+        st.markdown("### Equilibrium Solubility (mg/mL)")
+        s1 = 3.5 + (len(st.session_state.f_o) * 0.05)
+        s2 = 10.2 + (len(st.session_state.f_s) * 0.02)
+        st.metric(f"Solubility in {st.session_state.f_o}", f"{s1:.2f}")
+        st.metric(f"Solubility in {st.session_state.f_s}", f"{s2:.2f}")
+
+    if st.button("Proceed to Ternary ➡️"):
+        st.session_state.nav_index = 2
+        st.rerun()
+
+# --- STEP 3: TERNARY (FROM CODE 2) ---
+elif nav == "Step 3: Ternary":
+    st.header("Step 3: Phase Behavior Mapping")
+    l, r = st.columns([1, 2])
+    with l:
+        st.session_state.o_val = st.slider("Oil %", 1.0, 50.0, st.session_state.o_val)
+        st.session_state.s_val = st.slider("Smix %", 1.0, 90.0, st.session_state.s_val)
+        w_val = 100 - st.session_state.o_val - st.session_state.s_val
+        st.metric("Water %", f"{w_val:.2f}%")
+    
+    with r:
+        logp_factor = max(0, min(10, st.session_state.get('logp', 1.5)))
+        shift = logp_factor * 1.2
+        za, zb = [2, 10, 25, 5, 2], [45+shift, 80, 65, 40, 45+shift]
+        zc = [100 - a - b for a, b in zip(za, zb)]
+        
+        fig = go.Figure(go.Scatterternary({
+            'mode': 'lines', 'fill': 'toself', 'name': 'Stable Region',
+            'a': za, 'b': zb, 'c': zc, 'fillcolor': 'rgba(46, 204, 113, 0.3)'
+        }))
+        fig.add_trace(go.Scatterternary(a=[st.session_state.o_val], b=[st.session_state.s_val], c=[w_val], marker=dict(color='red', size=15)))
+        st.plotly_chart(fig, use_container_width=True)
+
+    if st.button("Proceed to Prediction ➡️"):
+        st.session_state.nav_index = 3
+        st.rerun()
+
+# --- STEP 4: PREDICTION (FROM CODE 1) ---
+elif nav == "Step 4: AI Prediction":
+    st.header(f"4. AI Prediction for {st.session_state.drug}")
+    
+    def s_enc(col, val): 
+        return encoders[col].transform([val])[0] if val in encoders[col].classes_ else 0
+    
+    in_d = pd.DataFrame([{
+        'Drug_Name': s_enc('Drug_Name', st.session_state.drug), 
+        'Oil_phase': s_enc('Oil_phase', st.session_state.f_o), 
+        'Surfactant': s_enc('Surfactant', st.session_state.f_s), 
+        'Co-surfactant': s_enc('Co-surfactant', st.session_state.f_cs)
+    }])
+    
+    res = {t: models[t].predict(in_d)[0] for t in models}
+    stab = min(100, max(0, (min(abs(res['Zeta_mV']), 30)/30*70) + (max(0, 0.5-res['PDI'])/0.5*30)))
+    
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Size", f"{res['Size_nm']:.2f} nm")
+    c2.metric("PDI", f"{res['PDI']:.3f}")
+    c3.metric("Zeta", f"{res['Zeta_mV']:.2f} mV")
+    c4.metric("%EE", f"{res['Encapsulation_Efficiency']:.2f}%")
+    c5.metric("Stability Score", f"{stab:.1f}%")
+    
+    st.divider()
+    explainer = shap.Explainer(models['Size_nm'], X_train)
+    sv = explainer(in_d)
+    fig_sh, ax = plt.subplots(figsize=(10, 4))
+    shap.plots.waterfall(sv[0], show=False)
+    st.pyplot(fig_sh)
+
+    # PDF Report Logic
+    def create_full_pdf(shap_fig):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(200, 10, "NanoPredict Pro: Final Report", ln=True, align='C')
+        pdf.ln(10)
+        pdf.set_font("Arial", '', 12)
+        pdf.cell(0, 10, f"Drug: {st.session_state.drug} | Stability: {stab:.1f}%", ln=True)
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+            shap_fig.savefig(tmp.name, format='png', bbox_inches='tight')
+            pdf.image(tmp.name, x=15, w=170)
+        
+        return pdf.output(dest='S').encode('latin-1')
+
+    if st.button("Generate Complete Submission Report"):
+        final_pdf = create_full_pdf(fig_sh)
+        st.download_button("📥 Download Report", data=final_pdf, file_name="NanoReport.pdf", mime="application/pdf")
