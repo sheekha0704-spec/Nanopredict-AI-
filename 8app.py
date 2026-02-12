@@ -19,13 +19,18 @@ except ImportError:
     RDKIT_AVAILABLE = False
 
 # --- 1. DATA ENGINE (FIXED ENCODING & UNIQUE MAPPING) ---
+# --- 1. DATA ENGINE (ROBUST ENCODING FIX) ---
 @st.cache_data
 def load_and_clean_data(uploaded_file=None):
     df = None
+    # Handle File Upload or Local Path
     if uploaded_file is not None:
         try:
+            # Try standard UTF-8 first
             df = pd.read_csv(uploaded_file)
-        except UnicodeDecodeError:
+        except (UnicodeDecodeError, TypeError):
+            # Fallback for special characters (degree symbols, etc)
+            uploaded_file.seek(0) # Reset file pointer for second attempt
             df = pd.read_csv(uploaded_file, encoding='latin1')
     else:
         file_path = 'nanoemulsion 2 (2).csv'
@@ -37,6 +42,7 @@ def load_and_clean_data(uploaded_file=None):
     
     if df is None: return None
 
+    # Column Standardizing
     column_mapping = {
         'Name of Drug': 'Drug_Name', 'Name of Oil': 'Oil_phase',
         'Name of Surfactant': 'Surfactant', 'Name of Cosurfactant': 'Co-surfactant',
@@ -47,6 +53,7 @@ def load_and_clean_data(uploaded_file=None):
     df = df.rename(columns=column_mapping)
     df.columns = [c.strip() for c in df.columns]
 
+    # --- UNIQUE CHEMICAL SIGNATURE LOGIC ---
     if RDKIT_AVAILABLE:
         def generate_chemical_sig(name):
             h = hashlib.md5(str(name).encode()).hexdigest()
@@ -56,6 +63,7 @@ def load_and_clean_data(uploaded_file=None):
         sig_map = {name: generate_chemical_sig(name) for name in unique_names}
         df['Ref_MW'] = df['Drug_Name'].map(sig_map)
 
+    # Numeric Cleaning
     def to_float(value):
         if pd.isna(value): return 0.0
         val_str = str(value).lower().strip()
