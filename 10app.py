@@ -155,7 +155,7 @@ import io
 # ... other imports ...
 # --- STEP 4: AI PREDICTION, SHAP & PDF REPORT ---
 elif nav == "Step 4: AI Prediction":
-    st.header(f"Step 4: AI Analysis - {st.session_state.drug}")
+st.header(f"Step 4: AI Analysis - {st.session_state.drug}")
     
     # 1. DYNAMIC PREDICTION LOGIC
     # These values change based on the specific drug's MW and LogP
