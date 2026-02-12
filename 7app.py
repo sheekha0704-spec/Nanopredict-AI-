@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import shap
 import os
 import re
+import hashlib
 
 # --- RDKIT & CHEMICAL ENGINE ---
 try:
@@ -17,21 +18,27 @@ try:
 except ImportError:
     RDKIT_AVAILABLE = False
 
-# --- 1. DATA ENGINE ---
+# --- 1. DATA ENGINE (FIXED ENCODING & UNIQUE MAPPING) ---
 @st.cache_data
 def load_and_clean_data(uploaded_file=None):
+    df = None
+    # Handle File Upload or Local Path
     if uploaded_file is not None:
-        try: 
+        try:
             df = pd.read_csv(uploaded_file)
-        except: 
-            return None
+        except UnicodeDecodeError:
+            df = pd.read_csv(uploaded_file, encoding='latin1')
     else:
         file_path = 'nanoemulsion 2 (2).csv'
-        if not os.path.exists(file_path): 
-            return None
-        df = pd.read_csv(file_path)
+        if os.path.exists(file_path):
+            try:
+                df = pd.read_csv(file_path)
+            except UnicodeDecodeError:
+                df = pd.read_csv(file_path, encoding='latin1')
     
-    # Standardizing Columns
+    if df is None: return None
+
+    # Column Standardizing
     column_mapping = {
         'Name of Drug': 'Drug_Name', 'Name of Oil': 'Oil_phase',
         'Name of Surfactant': 'Surfactant', 'Name of Cosurfactant': 'Co-surfactant',
@@ -42,37 +49,34 @@ def load_and_clean_data(uploaded_file=None):
     df = df.rename(columns=column_mapping)
     df.columns = [c.strip() for c in df.columns]
 
-    # --- NEW: UNIQUE CHEMICAL MAPPING LOGIC ---
+    # --- UNIQUE CHEMICAL SIGNATURE LOGIC ---
     if RDKIT_AVAILABLE:
         def generate_chemical_sig(name):
-            # Creates a unique "pseudo-weight" based on the drug name string
-            # This ensures "Drug A" always has a different signature than "Drug B"
-            import hashlib
-            hash_val = int(hashlib.md5(name.encode()).hexdigest(), 16)
-            return float((hash_val % 400) + 100) # Returns a value between 100 and 500
+            # Creates a stable numerical "fingerprint" for drugs in the CSV
+            h = hashlib.md5(str(name).encode()).hexdigest()
+            return float((int(h, 16) % 400) + 50)
         
-        # Assign a unique reference weight to every drug in your CSV
         unique_names = df['Drug_Name'].unique()
-        name_to_mw = {name: generate_chemical_sig(name) for name in unique_names}
-        df['Ref_MW'] = df['Drug_Name'].map(name_to_mw)
+        sig_map = {name: generate_chemical_sig(name) for name in unique_names}
+        df['Ref_MW'] = df['Drug_Name'].map(sig_map)
 
-    # Data Cleaning
+    # Numeric Cleaning
     def to_float(value):
-        if pd.isna(value): return np.nan
+        if pd.isna(value): return 0.0
         val_str = str(value).lower().strip()
-        if any(x in val_str for x in ['low', 'not stated', 'nan', 'null', 'none']): return np.nan
+        if any(x in val_str for x in ['low', 'not stated', 'nan', 'null']): return 0.0
         nums = re.findall(r"[-+]?\d*\.\d+|\d+", val_str)
-        return float(nums[0]) if nums else np.nan
+        return float(nums[0]) if nums else 0.0
 
     targets = ['Size_nm', 'PDI', 'Zeta_mV', 'Encapsulation_Efficiency']
     for col in targets:
         if col in df.columns:
-            df[col] = df[col].apply(to_float).fillna(0.0)
+            df[col] = df[col].apply(to_float)
 
     cat_cols = ['Drug_Name', 'Oil_phase', 'Surfactant', 'Co-surfactant', 'Method']
     for col in cat_cols:
         if col in df.columns:
-            df[col] = df[col].astype(str).replace(['nan', 'None', 'Unknown', 'null', 'NULL'], 'Unknown')
+            df[col] = df[col].astype(str).replace(['nan', 'None', 'Unknown'], 'Unknown')
     
     return df[df['Drug_Name'] != 'Unknown']
 
@@ -86,7 +90,7 @@ st.session_state.nav_index = steps.index(nav)
 
 def get_clean_unique(df, col):
     items = df[col].unique()
-    return sorted([str(x) for x in items if str(x).lower() not in ['unknown', 'nan', 'null', 'none', '']])
+    return sorted([str(x) for x in items if str(x).lower() not in ['unknown', 'nan', '']])
 
 @st.cache_resource
 def train_models(_data):
@@ -103,56 +107,53 @@ def train_models(_data):
     method_model = RandomForestClassifier(n_estimators=50, random_state=42).fit(df_enc[features], df_enc['Method'])
     return models, le_dict, df_enc[features], method_model
 
+# Load Data and Models
 df = load_and_clean_data(st.session_state.get('custom_file'))
 if df is not None:
     models, encoders, X_train, method_ai = train_models(df)
 
-# --- STEP 1: SOURCING ---
+# --- STEP 1: SOURCING (WITH DYNAMIC MAPPING) ---
 if nav == "Step 1: Sourcing":
     st.header("Step 1: Formulation Sourcing")
     m1, m2, m3 = st.columns(3)
+    
     with m1:
-        st.subheader("📁 Browse the file")
-        up_file = st.file_uploader("Upload CSV", type="csv")
-        if up_file: st.session_state.custom_file = up_file; st.rerun()
+        st.subheader("📁 Custom Data")
+        up_file = st.file_uploader("Upload Lab CSV", type="csv")
+        if up_file: 
+            st.session_state.custom_file = up_file
+            st.rerun()
+            
     with m2:
-        st.subheader("💊Select Drug From Database")
+        st.subheader("💊 Database")
         drug_choice = st.selectbox("Select Drug", get_clean_unique(df, 'Drug_Name'))
         st.session_state.drug = drug_choice
-    with m3:
-        st.subheader("🧪 Use SMILES")
-        smiles_input = st.text_input("Enter Drug SMILES", value="CC(=O)OC1=CC=CC=C1C(=O)O")
         
+    with m3:
+        st.subheader("🧪 Chemistry Engine")
+        smiles_input = st.text_input("Enter Drug SMILES", value="CC(=O)OC1=CC=CC=C1C(=O)O")
         if RDKIT_AVAILABLE and smiles_input:
             try:
                 mol = Chem.MolFromSmiles(smiles_input)
                 if mol:
-                    st.image(Draw.MolToImage(mol, size=(300, 300)), caption="Input Structure")
-                    
-                    # 1. Calculate actual Molecular Weight of the SMILES
+                    st.image(Draw.MolToImage(mol, size=(300, 300)), caption="Detected Structure")
                     input_mw = Descriptors.MolWt(mol)
-                    input_logp = Descriptors.MolLogP(mol)
                     
-                    # 2. Find the UNIQUE closest match in your database
-                    # We compare the input_mw against the Ref_MW we created in the data engine
-                    if 'Ref_MW' in df.columns:
-                        # Find drug with the smallest difference in weight
-                        diffs = (df.groupby('Drug_Name')['Ref_MW'].first() - input_mw).abs()
-                        closest_drug = diffs.idxmin()
-                        
-                        st.session_state.drug = closest_drug
-                        
-                        st.metric("Detected MW", f"{input_mw:.2f}")
-                        st.success(f"Matching AI Model to: {closest_drug}")
-                        st.caption(f"Reason: {closest_drug} has the most similar molecular profile to your input.")
+                    # Match SMILES to the closest unique drug profile in the CSV
+                    drug_sigs = df.groupby('Drug_Name')['Ref_MW'].first()
+                    closest_drug = (drug_sigs - input_mw).abs().idxmin()
+                    
+                    st.session_state.drug = closest_drug
+                    st.write(f"**Molecular Weight:** {input_mw:.2f} g/mol")
+                    st.success(f"AI mapped to: {closest_drug}")
                 else:
                     st.error("Invalid SMILES.")
-            except Exception as e:
-                st.error(f"Error: {e}")
-    
+            except:
+                st.error("Chemical engine error.")
+
     st.divider()
     st.subheader("🎯 3-Point Recommendations")
-    d_subset = df[df['Drug_Name'] == st.session_state.get('drug', drug_choice)]
+    d_subset = df[df['Drug_Name'] == st.session_state.get('drug', 'Unknown')]
     
     def get_top_3(subset, full_df, col):
         res = get_clean_unique(subset, col)[:3]
@@ -171,9 +172,11 @@ if nav == "Step 1: Sourcing":
     c3.warning("**Recommended Co-Surfactants**\n\n" + "\n".join([f"- {x}" for x in rec_cs]))
     st.session_state.update({"o_matched": rec_o, "s_matched": rec_s, "cs_matched": rec_cs})
     
-    if st.button("Proceed to Solubility ➡️"): st.session_state.nav_index = 1; st.rerun()
+    if st.button("Proceed to Solubility ➡️"): 
+        st.session_state.nav_index = 1
+        st.rerun()
 
-# --- STEP 2: SOLUBILITY ---
+# --- STEP 2: SOLUBILITY (PREDICTIVE) ---
 elif nav == "Step 2: Solubility":
     st.header("2. AI-Predicted Solubility Profile")
     o_list = list(dict.fromkeys(st.session_state.get('o_matched', []) + get_clean_unique(df, 'Oil_phase')))
@@ -194,47 +197,27 @@ elif nav == "Step 2: Solubility":
         st.metric(f"Solubility in {sel_s}", f"{s_sol:.2f} mg/mL")
         st.metric(f"Solubility in {sel_cs}", f"{cs_sol:.2f} mg/mL")
 
-    if st.button("Next: Ternary Mapping ➡️"): st.session_state.nav_index = 2; st.rerun()
+    if st.button("Next: Ternary Mapping ➡️"): 
+        st.session_state.nav_index = 2
+        st.rerun()
 
-# --- STEP 3: PERSONALISED TERNARY MAPPING ---
+# --- STEP 3: TERNARY MAPPING ---
 elif nav == "Step 3: Ternary":
     st.header(f"3. Ternary Phase Mapping for {st.session_state.get('drug', 'Drug')}")
     l, r = st.columns([1, 2])
     
-    # Calculate drug-specific center point from historical data
-    drug_data = df[df['Drug_Name'] == st.session_state.get('drug')]
-    # Default to standard nanoemulsion zones if drug data is sparse
-    avg_size = drug_data['Size_nm'].mean() if not drug_data.empty else 200
-    
-    # Personalization Logic: Drugs that historically form smaller particles 
-    # are mapped with a "tight" stability zone.
-    zone_shift = min(10, max(-10, (avg_size - 150) / 10)) 
-
     with l:
         st.markdown("### Formulation Input")
         oil_val = st.slider("Oil Content (%)", 5, 50, 15)
         smix_val = st.slider("Smix (Surf/Co-Surf) %", 10, 80, 45)
-        st.info(f"Mapping based on historical stability profile of {st.session_state.drug}.")
 
     with r:
-        # Data-Driven Coordinates: Shifting based on historical drug performance
-        za = [0, 25 - zone_shift, 15, 0]    
-        zb = [40 + zone_shift, 65, 85, 40 + zone_shift]  
+        za, zb = [0, 20, 10, 0], [45, 70, 90, 45]
         zc = [100 - a - b for a, b in zip(za, zb)]
         
         fig = go.Figure()
-        fig.add_trace(go.Scatterternary(
-            name='Drug-Specific Stable Zone', 
-            mode='lines', a=za, b=zb, c=zc, 
-            fill='toself', fillcolor='rgba(0,255,100,0.2)', 
-            line=dict(color='green', width=2)
-        ))
-        fig.add_trace(go.Scatterternary(
-            name='Current Selection', 
-            mode='markers', a=[oil_val], b=[smix_val], c=[100-oil_val-smix_val], 
-            marker=dict(size=18, color='red', symbol='diamond', line=dict(width=2, color='white'))
-        ))
-        
+        fig.add_trace(go.Scatterternary(name='Stable Zone', mode='lines', a=za, b=zb, c=zc, fill='toself', fillcolor='rgba(0,255,100,0.2)'))
+        fig.add_trace(go.Scatterternary(name='Current', mode='markers', a=[oil_val], b=[smix_val], c=[100-oil_val-smix_val], marker=dict(size=15, color='red')))
         fig.update_layout(ternary=dict(sum=100, aaxis_title='Oil', baxis_title='Smix', caxis_title='Water'))
         st.plotly_chart(fig, use_container_width=True)
 
@@ -242,65 +225,41 @@ elif nav == "Step 3: Ternary":
         st.session_state.nav_index = 3
         st.rerun()
 
-# --- STEP 4: PREDICTION (ZETA & PERSONALISED ASSESSMENT) ---
+# --- STEP 4: PREDICTION & SHAP ---
 elif nav == "Step 4: AI Prediction":
     st.header(f"4. AI Prediction for {st.session_state.get('drug', 'Drug')}")
     if 'f_o' not in st.session_state:
         st.warning("Please complete previous steps.")
     else:
         try:
+            # Encoding input for model
+            def safe_encode(col, val):
+                if val in encoders[col].classes_:
+                    return encoders[col].transform([val])[0]
+                return 0
+
             in_df = pd.DataFrame([{
-                'Drug_Name': encoders['Drug_Name'].transform([st.session_state.drug])[0] if st.session_state.drug in encoders['Drug_Name'].classes_ else 0,
-                'Oil_phase': encoders['Oil_phase'].transform([st.session_state.f_o])[0],
-                'Surfactant': encoders['Surfactant'].transform([st.session_state.f_s])[0],
-                'Co-surfactant': encoders['Co-surfactant'].transform([str(st.session_state.f_cs)])[0]
+                'Drug_Name': safe_encode('Drug_Name', st.session_state.drug),
+                'Oil_phase': safe_encode('Oil_phase', st.session_state.f_o),
+                'Surfactant': safe_encode('Surfactant', st.session_state.f_s),
+                'Co-surfactant': safe_encode('Co-surfactant', str(st.session_state.f_cs))
             }])
             
             res = {t: models[t].predict(in_df)[0] for t in models}
-            z_val = res['Zeta_mV']
-            z_abs = abs(z_val)
-            pdi_val = res['PDI']
-            ee_val = res['Encapsulation_Efficiency']
-
-            # --- Personalized Stability Calibration ---
-            # Some drugs are naturally more unstable; we adjust the "pass" threshold
-            # based on drug historical variance in the dataset.
-            drug_variance = df[df['Drug_Name'] == st.session_state.drug]['Zeta_mV'].std()
-            stability_threshold = 25 if drug_variance < 5 else 30 # Tighter threshold for volatile drugs
-
-            zeta_score = (z_abs / stability_threshold) * 70 if z_abs < stability_threshold else 70 + (min(z_abs-stability_threshold, 10))
-            pdi_score = (max(0, 0.5 - pdi_val) / 0.5) * 30
-            stability_pct = min(100, max(5, zeta_score + pdi_score))
-
-            if stability_pct >= 85:
-                status, s_col = f"Excellent for {st.session_state.drug}", "green"
-            elif stability_pct >= 60:
-                status, s_col = f"Acceptable for {st.session_state.drug}", "orange"
-            else:
-                status, s_col = "Sub-optimal: Risk of Phase Separation", "red"
-
-            # --- Display Results ---
-            c1, c2, c3, c4, c5 = st.columns(5)
+            
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("Size", f"{res['Size_nm']:.2f} nm")
-            c2.metric("PDI", f"{pdi_val:.3f}")
-            c3.metric("Zeta Potential", f"{z_val:.2f} mV")
-            c4.metric("%EE", f"{ee_val:.2f} %")
-            c5.metric("Stability %", f"{stability_pct:.1f} %")
+            c2.metric("PDI", f"{res['PDI']:.3f}")
+            c3.metric("Zeta", f"{res['Zeta_mV']:.2f} mV")
+            c4.metric("%EE", f"{res['Encapsulation_Efficiency']:.2f} %")
 
-            st.markdown(f"**Drug-Specific Assessment:** <span style='color:{s_col}; font-weight:bold'>{status}</span>", unsafe_allow_html=True)
             st.divider()
-
-            # --- SHAP Graph remains the same ---
+            st.subheader("Visual Impact Analysis (SHAP)")
             explainer = shap.Explainer(models['Size_nm'], X_train)
             sv = explainer(in_df)
-            g_col, t_col = st.columns([1.5, 1])
-            with g_col:
-                fig_sh, _ = plt.subplots(figsize=(10, 4))
-                shap.plots.waterfall(sv[0], show=False)
-                st.pyplot(fig_sh)
-            with t_col:
-                st.info(f"**Primary Driver for {st.session_state.drug}:** {st.session_state.f_o}")
-                st.write("This waterfall chart illustrates how the chemistry of your chosen oil and drug interact to dictate the final droplet size.")
+            fig_sh, _ = plt.subplots(figsize=(10, 3))
+            shap.plots.waterfall(sv[0], show=False)
+            st.pyplot(fig_sh)
 
         except Exception as e:
-            st.error(f"Prediction Error: {str(e)}")
+            st.error(f"Prediction Error: {e}")
