@@ -226,8 +226,10 @@ elif nav == "Step 4: AI Prediction":
 # SAFE MODEL EVALUATION BLOCK
 # =============================
 
+from sklearn.model_selection import cross_val_score
+
 st.divider()
-st.header("📊 Model Evaluation (80-20 Split)")
+st.header("📊 Cross-Validated Model Performance (5-Fold)")
 
 if df is not None:
 
@@ -235,13 +237,10 @@ if df is not None:
     targets = ['Size_nm', 'PDI', 'Zeta_mV', 'Encapsulation_Efficiency']
 
     df_eval = df.copy()
-    enc_eval = {}
 
-    # Encode again safely for evaluation
     for col in features + ['Method']:
         le = LabelEncoder()
         df_eval[col] = le.fit_transform(df_eval[col].astype(str))
-        enc_eval[col] = le
 
     X_eval = df_eval[features]
 
@@ -249,31 +248,31 @@ if df is not None:
 
         y_eval = df_eval[target]
 
-        X_train_eval, X_test_eval, y_train_eval, y_test_eval = train_test_split(
+        model_cv = GradientBoostingRegressor(
+            n_estimators=150,
+            learning_rate=0.08,
+            max_depth=4,
+            random_state=42
+        )
+
+        r2_scores = cross_val_score(
+            model_cv,
             X_eval,
             y_eval,
-            test_size=0.2,
-            random_state=42
+            cv=5,
+            scoring='r2'
         )
 
-        model_eval = GradientBoostingRegressor(
-            n_estimators=100,
-            learning_rate=0.1,
-            max_depth=3,
-            random_state=42
+        mae_scores = -cross_val_score(
+            model_cv,
+            X_eval,
+            y_eval,
+            cv=5,
+            scoring='neg_mean_absolute_error'
         )
-
-        model_eval.fit(X_train_eval, y_train_eval)
-        y_pred_eval = model_eval.predict(X_test_eval)
-
-        r2 = r2_score(y_test_eval, y_pred_eval)
-        mae = mean_absolute_error(y_test_eval, y_pred_eval)
-        rmse = np.sqrt(mean_squared_error(y_test_eval, y_pred_eval))
 
         st.subheader(f"Target: {target}")
-        st.write(f"Train Samples: {len(X_train_eval)}")
-        st.write(f"Test Samples: {len(X_test_eval)}")
-        st.write(f"R² Score: {round(r2,4)}")
-        st.write(f"MAE: {round(mae,4)}")
-        st.write(f"RMSE: {round(rmse,4)}")
+        st.write(f"Mean R² (5-Fold): {round(np.mean(r2_scores),4)}")
+        st.write(f"Std R²: ±{round(np.std(r2_scores),4)}")
+        st.write(f"Mean MAE: {round(np.mean(mae_scores),4)}")
         st.write("---")
