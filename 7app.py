@@ -245,21 +245,61 @@ elif nav == "Step 4: AI Prediction":
                 'Co-surfactant': safe_encode('Co-surfactant', str(st.session_state.f_cs))
             }])
             
+            # Run Predictions
             res = {t: models[t].predict(in_df)[0] for t in models}
             
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Size", f"{res['Size_nm']:.2f} nm")
-            c2.metric("PDI", f"{res['PDI']:.3f}")
-            c3.metric("Zeta", f"{res['Zeta_mV']:.2f} mV")
-            c4.metric("%EE", f"{res['Encapsulation_Efficiency']:.2f} %")
+            # --- STABILITY CALIBRATION ---
+            z_abs = abs(res['Zeta_mV'])
+            pdi = res['PDI']
+            # Logic: Higher Zeta (>30mV) and lower PDI (<0.3) = High Stability
+            stability_score = (min(z_abs, 40) / 40 * 70) + (max(0, 0.5 - pdi) / 0.5 * 30)
+            
+            if stability_score > 75: 
+                stab_status, stab_col = "Highly Stable", "green"
+            elif stability_score > 50: 
+                stab_status, stab_col = "Moderately Stable", "orange"
+            else: 
+                stab_status, stab_col = "Potential Instability/Aggregation", "red"
 
+            # Results Display
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Size", f"{res['Size_nm']:.2f} nm")
+            c2.metric("PDI", f"{pdi:.3f}")
+            c3.metric("Zeta Potential", f"{res['Zeta_mV']:.2f} mV")
+            c4.metric("% EE", f"{res['Encapsulation_Efficiency']:.2f} %")
+            c5.metric("Stability Rating", stab_status)
+
+            st.markdown(f"**AI Stability Verdict:** <span style='color:{stab_col}; font-weight:bold'>{stab_status}</span>", unsafe_allow_html=True)
             st.divider()
-            st.subheader("Visual Impact Analysis (SHAP)")
+
+            # --- SHAP ANALYSIS & INTERPRETATION ---
+            st.subheader("🧬 Formulation Driver Analysis")
+            col_graph, col_text = st.columns([1.5, 1])
+
             explainer = shap.Explainer(models['Size_nm'], X_train)
             sv = explainer(in_df)
-            fig_sh, _ = plt.subplots(figsize=(10, 3))
-            shap.plots.waterfall(sv[0], show=False)
-            st.pyplot(fig_sh)
+
+            with col_graph:
+                fig_sh, _ = plt.subplots(figsize=(10, 4))
+                shap.plots.waterfall(sv[0], show=False)
+                st.pyplot(fig_sh)
+
+            with col_text:
+                st.info("### AI Interpretation")
+                # Dynamic interpretation based on SHAP values
+                feature_names = ['Drug', 'Oil', 'Surfactant', 'Co-surfactant']
+                shap_vals = sv.values[0]
+                top_idx = np.argmax(np.abs(shap_vals))
+                impact_dir = "increasing" if shap_vals[top_idx] > 0 else "decreasing"
+                
+                st.write(f"""
+                This chart shows how your formulation choices shifted the predicted particle size from the base average.
+                
+                **Key Observations:**
+                * **Primary Driver:** The **{feature_names[top_idx]}** choice had the strongest influence, {impact_dir} the size by {abs(shap_vals[top_idx]):.1f} nm.
+                * **Synergy:** The interaction between **{st.session_state.f_o}** and **{st.session_state.f_s}** dictates the current **{stab_status}** rating.
+                * **Optimization Tip:** To reduce size further, look for components with blue bars (negative SHAP values) in the chart.
+                """)
 
         except Exception as e:
             st.error(f"Prediction Error: {e}")
