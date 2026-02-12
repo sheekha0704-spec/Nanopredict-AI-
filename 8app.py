@@ -125,7 +125,7 @@ if nav == "Step 1: Sourcing":
             st.session_state.custom_file = up_file
             st.rerun()
     with m2:
-        st.subheader("💊 Select Druga from Database")
+        st.subheader("💊 Select Drug from Database")
         drug_choice = st.selectbox("Select Drug", get_clean_unique(df, 'Drug_Name'))
         st.session_state.drug = drug_choice
     with m3:
