@@ -182,7 +182,7 @@ elif nav == "Step 3: Ternary":
         st.plotly_chart(fig, use_container_width=True)
     if st.button("Next: AI Prediction ➡️"): st.session_state.nav_index = 3; st.rerun()
 
-# --- STEP 4: PREDICTION (WITH FULL PDF REPORT) ---
+# --- STEP 4: PREDICTION (WITH COMPOSITION TABLE) ---
 elif nav == "Step 4: AI Prediction":
     st.header(f"4. AI Prediction for {st.session_state.get('drug', 'Drug')}")
     try:
@@ -240,20 +240,27 @@ elif nav == "Step 4: AI Prediction":
             pdf.line(10, 30, 200, 30)
             pdf.ln(10)
 
-            # --- ADDED: COMPOSITION ANALYSIS SECTION ---
+            # --- 1. COMPOSITION ANALYSIS TABLE (REPLACED TERNARY) ---
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(200, 10, "1. Formulation Composition Analysis", ln=True)
-            pdf.set_font("Arial", '', 11)
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(80, 8, "Component", border=1, align='C')
+            pdf.cell(80, 8, "Percentage (%)", border=1, ln=True, align='C')
             
-            # Retrieve values from session state sliders
+            pdf.set_font("Arial", '', 10)
             o_v = st.session_state.get('oil_v', 15)
             s_v = st.session_state.get('smix_v', 45)
             w_v = 100 - o_v - s_v
             
-            pdf.cell(0, 8, f"- Oil Phase Concentration: {o_v}%", ln=True)
-            pdf.cell(0, 8, f"- Smix (Surfactant/Co-surfactant) Concentration: {s_v}%", ln=True)
-            pdf.cell(0, 8, f"- Water Content: {w_v}%", ln=True)
-            pdf.ln(5)
+            comp_data = [
+                ("Oil Phase", f"{o_v}%"),
+                ("Smix (Surf/Co-Surf)", f"{s_v}%"),
+                ("Water Phase", f"{w_v}%")
+            ]
+            for c, p in comp_data:
+                pdf.cell(80, 8, c, border=1)
+                pdf.cell(80, 8, p, border=1, ln=True)
+            pdf.ln(10)
             
             # STEP 1 & 2 SUMMARY
             pdf.set_font("Arial", 'B', 12)
@@ -263,29 +270,11 @@ elif nav == "Step 4: AI Prediction":
             pdf.cell(0, 8, f"Selected Oil Phase: {st.session_state.f_o}", ln=True)
             pdf.cell(0, 8, f"Selected Surfactant: {st.session_state.f_s}", ln=True)
             pdf.cell(0, 8, f"Selected Co-Surfactant: {st.session_state.f_cs}", ln=True)
-            pdf.ln(5)
-
-            # STEP 3 TERNARY DATA & IMAGE
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "3. Ternary Phase Analysis", ln=True)
-            
-            # Recreate Ternary Diagram for PDF
-            fig_tern = go.Figure(go.Scatterternary(
-                a=[o_v], b=[s_v], c=[w_v], 
-                marker=dict(color='red', size=12, symbol='diamond')
-            ))
-            fig_tern.update_layout(ternary=dict(sum=100, aaxis_title='Oil', baxis_title='Smix', caxis_title='Water'), showlegend=False)
-
-            # Use tempfile to save and embed Ternary Image
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_tern:
-                # Use kaleido for export (Ensure requirements.txt has kaleido==0.1.0post1)
-                fig_tern.write_image(tmp_tern.name, engine="kaleido")
-                pdf.image(tmp_tern.name, x=50, w=110)
-            pdf.ln(5)
+            pdf.ln(10)
 
             # STEP 4 PREDICTIONS TABLE
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "4. AI Prediction Results", ln=True)
+            pdf.cell(200, 10, "3. AI Prediction Results", ln=True)
             pdf.set_font("Arial", 'B', 10)
             pdf.cell(80, 8, "Parameter", border=1, align='C')
             pdf.cell(80, 8, "Predicted Value", border=1, ln=True, align='C')
@@ -306,20 +295,20 @@ elif nav == "Step 4: AI Prediction":
             
             # SHAP WATERFALL IMAGE
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "5. Formulation Driver Analysis (SHAP Waterfall)", ln=True)
+            pdf.cell(200, 10, "4. Factor Influence Analysis (SHAP)", ln=True)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
                 shap_fig.savefig(tmp.name, format='png', bbox_inches='tight')
                 pdf.image(tmp.name, x=15, w=170)
             
             pdf.set_y(-20)
             pdf.set_font("Arial", 'I', 8)
-            pdf.cell(0, 10, "Report generated via NanoPredict Pro - Proprietary AI Formulation Engine", align='C')
+            pdf.cell(0, 10, "Report generated via NanoPredict Pro - AI Formulation Engine", align='C')
             
             return pdf.output(dest='S').encode('latin-1')
 
         st.divider()
         if st.button("Generate Complete Submission Report"):
-            with st.spinner("Compiling all steps and diagrams into PDF..."):
+            with st.spinner("Compiling results into PDF..."):
                 final_pdf = create_full_pdf(fig_sh)
                 st.download_button(
                     label="📥 Download Submission PDF",
