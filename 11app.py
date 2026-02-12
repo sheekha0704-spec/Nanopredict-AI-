@@ -79,63 +79,52 @@ def load_and_clean_data(uploaded_file=None):
 @st.cache_resource
 def train_models(_data):
 
-    if _data is None:
-        return None, None, None, None, None
+    from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from sklearn.model_selection import train_test_split
 
+@st.cache_resource
+def train_models(_data):
+    if _data is None: return None, None, None, None, None
+    
     features = ['Drug_Name', 'Oil_phase', 'Surfactant', 'Co-surfactant']
     targets = ['Size_nm', 'PDI', 'Zeta_mV', 'Encapsulation_Efficiency']
-
-    df_enc = _data.copy()
     le_dict = {}
-
+    df_enc = _data.copy()
+    
     for col in features + ['Method']:
         le = LabelEncoder()
-        df_enc[col] = le.fit_transform(df_enc[col].astype(str))
+        df_enc[col] = le.fit_transform(_data[col].astype(str))
         le_dict[col] = le
 
+    # Split data: 80% Training, 20% Testing
     X = df_enc[features]
-
     models = {}
-    evaluation_results = {}
+    metrics_results = {}
 
-    for target in targets:
-        y = df_enc[target]
-
-        # 80-20 Split
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y,
-            test_size=0.2,
-            random_state=42
-        )
-
-        model = GradientBoostingRegressor(
-            n_estimators=100,
-            learning_rate=0.1,
-            max_depth=3,
-            random_state=42
-        )
-
+    for t in targets:
+        y = df_enc[t]
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # Train Model
+        model = GradientBoostingRegressor(n_estimators=50, random_state=42)
         model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-
-        r2 = r2_score(y_test, y_pred)
-        mae = mean_absolute_error(y_test, y_pred)
-        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-
-        evaluation_results[target] = {
-            "R2": round(r2, 4),
-            "MAE": round(mae, 4),
-            "RMSE": round(rmse, 4),
-            "Train_Size": len(X_train),
-            "Test_Size": len(X_test)
+        models[t] = model
+        
+        # Calculate Metrics
+        preds = model.predict(X_test)
+        metrics_results[t] = {
+            'R2': r2_score(y_test, preds),
+            'MAE': mean_absolute_error(y_test, preds),
+            'RMSE': np.sqrt(mean_squared_error(y_test, preds))
         }
 
-        models[target] = model
+    # Train classification model for Method
+    method_model = RandomForestClassifier(n_estimators=50, random_state=42).fit(X, df_enc['Method'])
+    
+    return models, le_dict, X, method_model, metrics_results
 
-    method_model = RandomForestClassifier(n_estimators=100, random_state=42)
-    method_model.fit(X, df_enc['Method'])
-
-    return models, le_dict, X_train, method_model, evaluation_results
+# Update the call in your main app:
+# models, encoders, X_train, method_ai, model_metrics = train_models(df)
 
 
 # --- 3. APP SETUP ---
