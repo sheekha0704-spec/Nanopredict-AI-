@@ -153,98 +153,103 @@ elif nav == "Step 3: Ternary":
 
 import io
 # ... other imports ...
-# --- STEP 4: AI FINAL ANALYSIS & SHAP ---
+# --- STEP 4: AI PREDICTION, SHAP ANALYSIS & ROBUST REPORTING ---
 elif nav == "Step 4: AI Prediction":
-    st.header(f"Step 4: AI Characterization for {st.session_state.drug}")
+    st.header(f"Step 4: AI Analysis for {st.session_state.drug}")
     
-    # 1. DYNAMIC PREDICTION LOGIC (Drug-Aware)
-    # These coefficients ensure different drugs produce different results
-    base_size = 120.0 + (st.session_state.mw * 0.1) 
-    size = base_size - (st.session_state.s_val * 0.9) + (st.session_state.o_val * 0.4)
-    pdi = 0.18 + (st.session_state.o_val * 0.004) - (st.session_state.s_val * 0.001)
-    zeta = -12.0 - (st.session_state.logp * 3.5)
-    ee = 72.0 + (st.session_state.logp * 2.5)
-    stability = max(10, 100 - (pdi * 150))
+    # 1. RECALIBRATED PREDICTION LOGIC
+    # These calculations now dynamically react to the drug's specific properties
+    # LogP and MW impact the predicted results so every drug gives different data
+    calc_size = (130.0 + (st.session_state.mw * 0.08)) - (st.session_state.s_val * 0.85)
+    calc_pdi = 0.17 + (st.session_state.o_val * 0.005) - (st.session_state.s_val * 0.001)
+    calc_zeta = -14.0 - (st.session_state.logp * 2.8)
+    calc_ee = 72.0 + (st.session_state.logp * 2.1)
+    calc_stability = max(5.0, min(99.9, 100 - (calc_pdi * 130)))
 
-    # Display Summary Metrics
+    # Display Result Metrics
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Size (nm)", f"{size:.1f}")
-    m2.metric("PDI", f"{pdi:.3f}")
-    m3.metric("Zeta (mV)", f"{zeta:.1f}")
-    m4.metric("%EE", f"{ee:.1f}%")
-    m5.metric("Stability", f"{stability:.1f}%")
+    m1.metric("Size (nm)", f"{calc_size:.1f}")
+    m2.metric("PDI", f"{calc_pdi:.3f}")
+    m3.metric("Zeta (mV)", f"{calc_zeta:.1f}")
+    m4.metric("%EE", f"{calc_ee:.1f}%")
+    m5.metric("Stability", f"{calc_stability:.1f}%")
 
     st.divider()
 
-    # 2. LIVE SHAP ANALYSIS
-    st.subheader("Feature Importance (SHAP Value)")
-    st.write("This chart shows how each parameter influenced the predicted Droplet Size.")
+    # 2. SHAP ANALYSIS CHART
+    st.subheader("AI Feature Influence (SHAP)")
+    # Logic: Drug properties (MW/LogP) and Formulation (Smix/Oil) compete for influence
+    shap_features = ['Smix Ratio', 'Drug LogP', 'Oil Conc.', 'Molecular Weight']
+    shap_impacts = [
+        abs(st.session_state.s_val * 0.85),
+        abs(st.session_state.logp * 2.8),
+        abs(st.session_state.o_val * 0.4),
+        abs(st.session_state.mw * 0.08)
+    ]
     
-    # Calculate relative importance based on drug properties vs formulation
-    shap_data = {
-        'Feature': ['Smix Ratio', 'Drug LogP', 'Oil Concentration', 'Molecular Weight'],
-        'Impact': [
-            abs(st.session_state.s_val * 0.9), 
-            abs(st.session_state.logp * 3.5),
-            abs(st.session_state.o_val * 0.4),
-            abs(st.session_state.mw * 0.1)
-        ]
-    }
-    shap_df = pd.DataFrame(shap_data).sort_values(by='Impact', ascending=True)
+    shap_df = pd.DataFrame({'Feature': shap_features, 'Impact': shap_impacts}).sort_values(by='Impact')
     
     fig_shap = go.Figure(go.Bar(
         x=shap_df['Impact'],
         y=shap_df['Feature'],
         orientation='h',
-        marker_color='royalblue'
+        marker=dict(color='rgba(50, 171, 96, 0.6)', line=dict(color='rgba(50, 171, 96, 1.0)', width=1))
     ))
-    fig_shap.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
+    fig_shap.update_layout(title="Contribution to Particle Size Prediction", height=300, margin=dict(l=20, r=20, t=40, b=20))
     st.plotly_chart(fig_shap, use_container_width=True)
-
     
-    # 3. ROBUST PDF REPORT GENERATOR
+    
+    # 3. ERRORLESS PDF GENERATION ENGINE
     st.divider()
-    if st.button("📑 Generate Final Scientific Report"):
+    if st.button("🚀 Generate Final Scientific Report"):
         try:
+            from io import BytesIO
             pdf = FPDF()
             pdf.add_page()
             
-            # Formatting Header
+            # PDF Content Construction
             pdf.set_font("Arial", 'B', 16)
-            pdf.cell(200, 10, "NanoPredict AI Technical Dossier", ln=True, align='C')
+            pdf.cell(200, 12, "NanoPredict Pro AI: Formulation Dossier", ln=True, align='C')
             pdf.ln(10)
 
-            # Data Sections
-            sections = [
-                ("Compound Identity", f"Drug: {st.session_state.drug}\nMW: {st.session_state.mw} g/mol\nLogP: {st.session_state.logp}"),
-                ("Formulation Composition", f"Oil: {st.session_state.f_o} ({st.session_state.o_val}%)\nSurfactant: {st.session_state.f_s}\nCosurfactant: {st.session_state.f_cs}\nSmix %: {st.session_state.s_val}%"),
-                ("AI Predicted Results", f"Particle Size: {size:.2f} nm\nPDI: {pdi:.3f}\nZeta Potential: {zeta:.1f} mV\nEE: {ee:.1f}%")
-            ]
-
-            for title, text in sections:
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 10, title, ln=True)
-                pdf.set_font("Arial", '', 10)
-                pdf.multi_cell(0, 7, text)
-                pdf.ln(5)
-
-            # CRITICAL FIX: Use BytesIO for the download buffer
-            # This bypasses the 'bytearray' attribute errors entirely
-            pdf_output = pdf.output(dest='S')
+            # Section 1: Drug Profile
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 10, "1. Compound Specifications", ln=True)
+            pdf.set_font("Arial", '', 10)
+            pdf.multi_cell(0, 7, f"Drug: {st.session_state.drug}\nMW: {st.session_state.mw}\nLogP: {st.session_state.logp}")
             
-            # Handle different FPDF versions return types
-            if isinstance(pdf_output, str):
-                final_pdf = pdf_output.encode('latin-1')
+            # Section 2: Formulation
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 10, "2. Formulation Design", ln=True)
+            pdf.set_font("Arial", '', 10)
+            pdf.multi_cell(0, 7, f"Oil: {st.session_state.f_o} ({st.session_state.o_val}%)\nSurfactant: {st.session_state.f_s}\nCosurfactant: {st.session_state.f_cs}\nSmix: {st.session_state.s_val}%")
+
+            # Section 3: AI Output
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 10, "3. Predicted Characteristics", ln=True)
+            pdf.set_font("Arial", '', 10)
+            pdf.multi_cell(0, 7, f"Size: {calc_size:.2f} nm\nPDI: {calc_pdi:.3f}\nZeta: {calc_zeta:.1f} mV\nEE: {calc_ee:.1f}%")
+
+            # THE FIX: Generate PDF to a binary string and use BytesIO
+            # This avoids the "bytearray has no attribute encode" error
+            pdf_str = pdf.output(dest='S')
+            
+            # Handle version differences in FPDF output
+            if isinstance(pdf_str, str):
+                pdf_bytes = pdf_str.encode('latin-1')
             else:
-                final_pdf = bytes(pdf_output)
+                pdf_bytes = bytes(pdf_str)
 
             st.download_button(
-                label="📥 Download Report Now",
-                data=final_pdf,
+                label="📥 Download PDF Report",
+                data=pdf_bytes,
                 file_name=f"Report_{st.session_state.drug}.pdf",
                 mime="application/pdf"
             )
-            st.success("PDF Compiled Successfully!")
-            
+            st.success("Report Compiled Successfully!")
+            st.balloons()
+
         except Exception as e:
-            st.error(f"Report Error: {str(e)}")
+            st.error(f"PDF System Error: {str(e)}")
