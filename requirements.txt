@@ -6,3 +6,4 @@ scikit-learn
 matplotlib
 shap
 fpdf
+pubchempy
