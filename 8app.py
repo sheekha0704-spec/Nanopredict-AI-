@@ -288,25 +288,7 @@ elif nav == "Step 4: AI Prediction":
             pdf.cell(0, 8, f"Selected Surfactant: {st.session_state.f_s}", ln=True)
             pdf.cell(0, 8, f"Selected Co-Surfactant: {st.session_state.f_cs}", ln=True)
             pdf.ln(5)
-
-            # STEP 3 TERNARY DATA & IMAGE
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "3. Ternary Phase Analysis", ln=True)
             
-            # Recreate Ternary Diagram for PDF
-            fig_tern = go.Figure(go.Scatterternary(
-                a=[o_v], b=[s_v], c=[w_v], 
-                marker=dict(color='red', size=12, symbol='diamond')
-            ))
-            fig_tern.update_layout(ternary=dict(sum=100, aaxis_title='Oil', baxis_title='Smix', caxis_title='Water'), showlegend=False)
-
-            # Use tempfile to save and embed Ternary Image
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_tern:
-                # Use kaleido for export (Ensure requirements.txt has kaleido==0.1.0post1)
-                fig_tern.write_image(tmp_tern.name, engine="kaleido")
-                pdf.image(tmp_tern.name, x=50, w=110)
-            pdf.ln(5)
-
             # STEP 4 PREDICTIONS TABLE
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(200, 10, "4. AI Prediction Results", ln=True)
