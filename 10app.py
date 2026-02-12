@@ -16,7 +16,6 @@ if 'nav_index' not in st.session_state:
 @st.cache_resource
 
 # Initialize models
-loaded_models = load_nano_models()
     st.session_state.update({
         'nav_index': 0, 'drug': "Acetazolamide", 'f_o': "MCT", 'f_s': "Tween 80", 
         'f_cs': "PEG-400", 'o_val': 10.0, 's_val': 60.0, 'w_val': 30.0,
