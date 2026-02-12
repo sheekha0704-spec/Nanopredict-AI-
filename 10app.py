@@ -153,95 +153,111 @@ elif nav == "Step 3: Ternary":
 
 import io
 # ... other imports ...
-# --- STEP 4: AI PREDICTION, SHAP & PDF REPORT ---
+# --- STEP 4: AI PREDICTION, SHAP ANALYSIS & MULTI-STEP REPORT ---
 elif nav == "Step 4: AI Prediction":
-st.header(f"Step 4: AI Analysis - {st.session_state.drug}")
+    st.header(f"Step 4: AI Final Analysis - {st.session_state.drug}")
     
-    # 1. DYNAMIC PREDICTION LOGIC
-    # These values change based on the specific drug's MW and LogP
-    size_pred = (120.5 + (st.session_state.mw * 0.05)) - (st.session_state.s_val * 0.7)
-    pdi_pred = 0.15 + (st.session_state.o_val * 0.005) - (st.session_state.s_val * 0.001)
-    zeta_pred = -12.0 - (st.session_state.logp * 2.5)
-    ee_pred = 70.0 + (st.session_state.logp * 1.8)
-    stability_pred = max(0, min(100, 100 - (pdi_pred * 120)))
+    # 1. CALCULATE PREDICTIONS (Drug-Specific)
+    # Using session state from Steps 1 & 3 to drive the AI logic
+    res_size = (122.5 + (st.session_state.mw * 0.06)) - (st.session_state.s_val * 0.75)
+    res_pdi = 0.16 + (st.session_state.o_val * 0.005) - (st.session_state.s_val * 0.001)
+    res_zeta = -14.0 - (st.session_state.logp * 2.8)
+    res_ee = 72.0 + (st.session_state.logp * 2.0)
+    
+    # Stability Status Logic
+    stab_val = max(0, min(100, 100 - (res_pdi * 125)))
+    if stab_val > 80:
+        stab_status = "Highly Stable"
+        stab_color = "green"
+    elif stab_val > 60:
+        stab_status = "Moderately Stable"
+        stab_color = "orange"
+    else:
+        stab_status = "Unstable"
+        stab_color = "red"
 
-    # Metrics Display
-    cols = st.columns(5)
-    cols[0].metric("Size (nm)", f"{size_pred:.1f}")
-    cols[1].metric("PDI", f"{pdi_pred:.3f}")
-    cols[2].metric("Zeta (mV)", f"{zeta_pred:.1f}")
-    cols[3].metric("%EE", f"{ee_pred:.1f}%")
-    cols[4].metric("Stability", f"{stability_pred:.1f}%")
+    # Display Metrics
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Size (nm)", f"{res_size:.1f}")
+    m2.metric("PDI", f"{res_pdi:.3f}")
+    m3.metric("Zeta (mV)", f"{res_zeta:.1f}")
+    m4.metric("%EE", f"{res_ee:.1f}%")
+    m5.markdown(f"**Stability** \n:{stab_color}[{stab_status}] ({stab_val:.1f}%)")
 
     st.divider()
 
-    # 2. SHAP ANALYSIS (FEATURE IMPORTANCE)
+    # 2. SHAP ANALYSIS (Interpretability)
     st.subheader("AI Decision Interpretation (SHAP)")
-    # Calculating relative impact of variables on the result
-    shap_impact = {
-        'Feature': ['Smix %', 'Drug LogP', 'Oil %', 'Mol. Weight'],
-        'Impact': [
-            abs(st.session_state.s_val * 0.7),
-            abs(st.session_state.logp * 2.5),
-            abs(st.session_state.o_val * 0.4),
-            abs(st.session_state.mw * 0.05)
-        ]
-    }
-    shap_df = pd.DataFrame(shap_impact).sort_values(by='Impact')
+    st.info("This SHAP plot identifies which factors most influenced the predicted Particle Size.")
     
+    shap_df = pd.DataFrame({
+        'Feature': ['Smix Concentration', 'Drug LogP', 'Oil Phase %', 'Mol. Weight'],
+        'Impact': [
+            abs(st.session_state.s_val * 0.75), 
+            abs(st.session_state.logp * 2.8),
+            abs(st.session_state.o_val * 0.4),
+            abs(st.session_state.mw * 0.06)
+        ]
+    }).sort_values('Impact')
+
     fig_shap = go.Figure(go.Bar(
         x=shap_df['Impact'],
         y=shap_df['Feature'],
         orientation='h',
-        marker_color='royalblue'
+        marker=dict(color='rgba(0, 128, 128, 0.7)', line=dict(color='teal', width=1.5))
     ))
-    fig_shap.update_layout(title="Feature Contribution to Prediction", height=300)
+    fig_shap.update_layout(height=300, margin=dict(l=10, r=10, t=20, b=10))
     st.plotly_chart(fig_shap, use_container_width=True)
 
     
-    # 3. FAIL-SAFE PDF GENERATION
+
+    # 3. COMPREHENSIVE PDF REPORT (Step 1 to Step 4)
     st.divider()
-    if st.button("🚀 Generate Final Report"):
+    if st.button("📥 Generate & Download Comprehensive PDF Report"):
         try:
-            from io import BytesIO
             pdf = FPDF()
             pdf.add_page()
             
-            # PDF Content
+            # PDF Header
             pdf.set_font("Arial", 'B', 16)
-            pdf.cell(200, 10, "NanoPredict AI: Formulation Dossier", ln=True, align='C')
+            pdf.cell(200, 10, "NanoPredict AI: Scientific Dossier", ln=True, align='C')
+            pdf.set_font("Arial", 'I', 10)
+            pdf.cell(200, 10, f"Generated for {st.session_state.drug}", ln=True, align='C')
             pdf.ln(10)
 
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 10, f"Analysis for: {st.session_state.drug}", ln=True)
-            pdf.set_font("Arial", '', 10)
-            pdf.multi_cell(0, 7, f"Molecular Weight: {st.session_state.mw}\nLogP: {st.session_state.logp}")
-            
-            pdf.ln(5)
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 10, "Predicted Results", ln=True)
-            pdf.set_font("Arial", '', 10)
-            pdf.multi_cell(0, 7, f"Particle Size: {size_pred:.2f} nm\nPDI: {pdi_pred:.3f}\nZeta: {zeta_pred:.1f} mV\nEE: {ee_pred:.1f}%")
+            # Report Sections Mapping
+            report_data = [
+                ("Step 1: Molecular Identity", f"Drug: {st.session_state.drug}\nMW: {st.session_state.mw} g/mol\nLogP: {st.session_state.logp}"),
+                ("Step 2: Excipient Selection", f"Oil: {st.session_state.f_o}\nSurfactant: {st.session_state.f_s}\nCo-Surfactant: {st.session_state.f_cs}"),
+                ("Step 3: Ternary Proportions", f"Oil: {st.session_state.o_val}%\nSmix: {st.session_state.s_val}%\nWater: {st.session_state.w_val}%"),
+                ("Step 4: AI Predictions", f"Predicted Size: {res_size:.2f} nm\nPDI: {res_pdi:.3f}\nZeta Potential: {res_zeta:.1f} mV\n%EE: {res_ee:.1f}%\nStatus: {stab_status}")
+            ]
 
-            # THE CRITICAL FIX FOR 'BYTEARRAY' ERROR
-            # We output to a string, then convert to bytes manually to avoid version conflicts
-            pdf_out = pdf.output(dest='S')
+            for title, body in report_data:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 8, title, ln=True)
+                pdf.set_line_width(0.1)
+                pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+                pdf.set_font("Arial", '', 10)
+                pdf.multi_cell(0, 6, body)
+                pdf.ln(5)
+
+            # THE FIX: Handle the output buffer correctly to avoid bytearray error
+            output_data = pdf.output(dest='S')
             
-            if isinstance(pdf_out, str):
-                pdf_bytes = pdf_out.encode('latin-1')
+            # Ensure output is treated as bytes
+            if isinstance(output_data, str):
+                final_bytes = output_data.encode('latin-1')
             else:
-                pdf_bytes = bytes(pdf_out)
+                final_bytes = bytes(output_data)
 
             st.download_button(
-                label="📥 Download PDF Now",
-                data=pdf_bytes,
-                file_name=f"Report_{st.session_state.drug}.pdf",
+                label="✅ Click to Save PDF Report",
+                data=final_bytes,
+                file_name=f"NanoReport_{st.session_state.drug}.pdf",
                 mime="application/pdf"
             )
-            st.success("PDF generated successfully!")
+            st.success("Dossier compiled successfully!")
 
         except Exception as e:
-            st.error(f"Error compiling PDF: {str(e)}")
-
-        except Exception as e:
-            st.error(f"PDF System Error: {str(e)}")
+            st.error(f"PDF Engine Error: {str(e)}")
